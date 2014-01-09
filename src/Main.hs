@@ -2,6 +2,7 @@ module Main where
 
 import Graphics.UI.GLFW as GLFW
 import Control.Concurrent.MVar
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Loops
 import System.Exit
@@ -10,6 +11,9 @@ import Graphics.Rendering.FreeType.Internal
 import Graphics.Rendering.FreeType.Internal.PrimitiveTypes
 import Graphics.Rendering.FreeType.Internal.Library
 import Graphics.Rendering.FreeType.Internal.FaceType
+import Graphics.Rendering.FreeType.Internal.Face
+import Graphics.Rendering.FreeType.Internal.GlyphSlot
+import Graphics.Rendering.FreeType.Internal.Bitmap
 import Foreign.Marshal.Alloc
 import Foreign.C.Types
 import Foreign.C.String
@@ -51,9 +55,38 @@ main = do
     chNdx <- ft_Get_Char_Index ff 65
     -- Load the glyph into freetype memory.
     runFreeType $ ft_Load_Glyph ff chNdx 0
+    -- Get the GlyphSlot.
+    slot <- peek $ glyph ff
+    fmt <- peek $ format slot
+    putStrLn $ "glyph format:" ++ glyphFormatString fmt
+    runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
+    -- Get the char bitmap.
+    bmp <- peek $ bitmap slot
+    putStrLn $ concat [ "rows:"
+                      , show $ rows bmp
+                      , " width:"
+                      , show $ width bmp
+                      , " pitch:"
+                      , show $ pitch bmp
+                      , " num_grays:"
+                      , show $ num_grays bmp
+                      , " pixel_mode:"
+                      , show $ pixel_mode bmp
+                      , " palette_mode:"
+                      , show $ palette_mode bmp
+                      ]
 
     wvar  <- makeNewWindow (100,100) (800,800) "Title"
     iterateM_ (loop wvar) (0,0)
+
+
+glyphFormatString :: FT_Glyph_Format -> String
+glyphFormatString fmt
+    | fmt == ft_GLYPH_FORMAT_COMPOSITE = "ft_GLYPH_FORMAT_COMPOSITE"
+    | fmt == ft_GLYPH_FORMAT_OUTLINE = "ft_GLYPH_FORMAT_OUTLINE"
+    | fmt == ft_GLYPH_FORMAT_PLOTTER = "ft_GLYPH_FORMAT_PLOTTER"
+    | fmt == ft_GLYPH_FORMAT_NONE = "ft_GLYPH_FORMAT_NONE"
+    | fmt == ft_GLYPH_FORMAT_BITMAP = "ft_GLYPH_FORMAT_BITMAP"
 
 
 runFreeType :: IO FT_Error -> IO ()
