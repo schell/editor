@@ -1,14 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Graphics.Text.Renderer (
     module T,
-    initTextRenderer
+    initTextRenderer,
+    TextResource(..)
 ) where
 
 import           Graphics.Utils
 import           Graphics.Types as T
 import           Graphics.Text.Font
 import           Graphics.Texture.Load
-import           Graphics.Rendering.OpenGL
+import           Graphics.Rendering.OpenGL hiding (Bitmap)
 import           Graphics.Rendering.OpenGL.Raw
 import           Codec.Picture
 import           Control.Monad
@@ -19,6 +20,9 @@ import           Foreign.Marshal.Array  (withArray)
 import           Foreign.Storable       ( sizeOf )
 import           Foreign.Ptr            (nullPtr)
 import qualified Data.ByteString as B
+
+
+data TextResource  = Font FilePath | Bitmap FilePath
 
 
 vertSrc :: B.ByteString
@@ -60,8 +64,8 @@ uvDescriptor :: VertexArrayDescriptor [Float]
 uvDescriptor = vertDescriptor
 
 
-initTextRenderer :: FilePath -> IO TextRenderer
-initTextRenderer font = do
+initTextRenderer :: TextResource -> IO TextRenderer
+initTextRenderer rsrc = do
     putStrLn "Text shader."
     v <- makeShader VertexShader vertSrc
     f <- makeShader FragmentShader fragSrc
@@ -84,8 +88,10 @@ initTextRenderer font = do
         updateColor c   = uniform cLoc $= c
 
     -- Load the font atlas.
-    Just t <- initTexture font 0
-    --t <- loadFontAtlas font (128,128)
+    t <- case rsrc of
+        Font font  -> loadFontAtlas font (128, 128)
+        Bitmap bmp -> do Just t <- initTexture bmp 0
+                         return t
 
     let drawText _ = do --let
                         --    verts  = stringToVerts s

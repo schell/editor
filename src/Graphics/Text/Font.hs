@@ -16,34 +16,26 @@ import Foreign.Marshal.Array
 import Graphics.Texture.Load
 import Graphics.Utils
 import Data.Int
+import Data.Word
 import Data.List
+import Codec.Picture
 
 bitmapToTexture :: FT_Bitmap -> IO TextureObject
 bitmapToTexture bmp = do
     let w = fromIntegral $ rows bmp
         h = fromIntegral $ width bmp
     -- Get the bitmap as an array of Int8.
-    raw <- peekArray (fromIntegral (rows bmp) * fromIntegral (width bmp)) $ buffer bmp
-    let pixels = map fromIntegral raw :: [Int8]
-    print (length pixels, w*h)
+    raw <- peekArray (w * h) $ buffer bmp
+
+    let ndx x y ww = y * w + x
+        img :: Image PixelRGBA8
+        img = generateImage (\x y -> PixelRGBA8 (fromIntegral $ raw !! ndx x y w) 0 0 1) w h
+
     texture Texture2D $= Enabled
     tex <- newBoundTexUnit 0
     printError
     putStrLn "Buffering glyph bitmap into texture."
-    withArray pixels $ \ptr -> texImage2D
-        Texture2D
-        -- No proxy
-        NoProxy
-        -- No mipmaps
-        0
-        -- Internal storage @ 8bit grey/redscale
-        R8
-        -- Size of the image.
-        (TextureSize2D w h)
-        -- No borders
-        0
-        -- Pixel data in bytes, grey/redscale
-        (PixelData Red UnsignedByte ptr)
+    unsafeTexImage2D RGB8 RGB img
     printError
     putStrLn "Texture loaded."
     return tex

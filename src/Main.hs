@@ -8,7 +8,7 @@ import Control.Monad.Loops
 import Control.Lens
 import System.Exit
 import System.Directory
-import Graphics.Rendering.OpenGL hiding (bitmap, Matrix)
+import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
 import Graphics.Rendering.FreeType.Internal
 import Graphics.Rendering.FreeType.Internal.PrimitiveTypes
 import Graphics.Rendering.FreeType.Internal.Library
@@ -53,12 +53,12 @@ main = do
     wvar  <- makeNewWindow (100,100) (800,800) "Title"
 
     -- Make sure our font lives.
-    --path   <- fmap (++ "/fonts/UbuntuMono-R.ttf") getCurrentDirectory
-    path   <- fmap (++ "/assets/text.png") getCurrentDirectory
-    exists <- doesFileExist path
-    unless exists $ fail $ path ++ " does not exist."
+    font   <- fmap (++ "/fonts/UbuntuMono-R.ttf") getCurrentDirectory
+    btmp   <- fmap (++ "/assets/text.png") getCurrentDirectory
+    --exists <- doesFileExist font
+    --unless exists $ fail $ font ++ " does not exist."
 
-    textRenderer <- initTextRenderer path
+    textRenderer <- initTextRenderer $ Font font
 
     iterateM_ (loop wvar) $ App textRenderer (0,0)
 
