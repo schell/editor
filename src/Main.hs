@@ -15,9 +15,12 @@ import Graphics.Rendering.FreeType.Internal.Face
 import Graphics.Rendering.FreeType.Internal.GlyphSlot
 import Graphics.Rendering.FreeType.Internal.Bitmap
 import Foreign.Marshal.Alloc
+import Foreign.Marshal.Array
 import Foreign.C.Types
 import Foreign.C.String
 import Foreign.Storable
+import Graphics.Texture.FTBitmap
+import Codec.Picture
 
 
 data InputEvent = CharEvent Char
@@ -75,6 +78,8 @@ main = do
                       , " palette_mode:"
                       , show $ palette_mode bmp
                       ]
+    -- Generate an opengl texture.
+    t <- bitmapToTexture bmp
 
     wvar  <- makeNewWindow (100,100) (800,800) "Title"
     iterateM_ (loop wvar) (0,0)
@@ -173,3 +178,5 @@ processEvents :: App -> [InputEvent] -> App
 processEvents = foldr process
     where process (CursorMoveEvent x y) a = (x,y)
           process _ a = a
+
+
