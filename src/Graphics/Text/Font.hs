@@ -20,26 +20,6 @@ import Data.Word
 import Data.List
 import Codec.Picture
 
-bitmapToTexture :: FT_Bitmap -> IO TextureObject
-bitmapToTexture bmp = do
-    let w = fromIntegral $ rows bmp
-        h = fromIntegral $ width bmp
-    -- Get the bitmap as an array of Int8.
-    raw <- peekArray (w * h) $ buffer bmp
-
-    let ndx x y ww = y * w + x
-        img :: Image PixelRGBA8
-        img = generateImage (\x y -> PixelRGBA8 (fromIntegral $ raw !! ndx x y w) 0 0 1) w h
-
-    texture Texture2D $= Enabled
-    tex <- newBoundTexUnit 0
-    printError
-    putStrLn "Buffering glyph bitmap into texture."
-    unsafeTexImage2D RGB8 RGB img
-    printError
-    putStrLn "Texture loaded."
-    return tex
-
 
 loadFontAtlas :: FilePath -> (Int,Int) -> IO TextureObject
 loadFontAtlas path (w, h) = do
@@ -73,12 +53,32 @@ loadFontAtlas path (w, h) = do
                       , show $ palette_mode bmp
                       ]
     -- Set the texture params on our bound texture.
-    textureFilter   Texture2D   $= ((Linear', Nothing), Linear')
-    textureWrapMode Texture2D S $= (Repeated, Clamp)
-    textureWrapMode Texture2D T $= (Repeated, Clamp)
+    texture Texture2D $= Enabled
+    
 
     -- Generate an opengl texture.
-    bitmapToTexture bmp
+    let w = fromIntegral $ rows bmp
+        h = fromIntegral $ width bmp
+    -- Get the bitmap as an array of Int8.
+    raw <- peekArray (w * h) $ buffer bmp
+
+    let ndx x y ww = y * w + x
+        img :: Image PixelRGBA8
+        img = generateImage (\x y -> PixelRGBA8 (fromIntegral $ raw !! ndx x y w) 0 0 1) w h
+
+    tex <- newBoundTexUnit 0
+    printError
+
+    putStrLn "Buffering glyph bitmap into texture."
+    unsafeTexImage2D RGB8 RGB img
+    printError
+
+    putStrLn "Texture loaded."
+    textureFilter   Texture2D   $= ((Linear', Nothing), Linear')
+    textureWrapMode Texture2D S $= (Repeated, ClampToEdge)
+    textureWrapMode Texture2D T $= (Repeated, ClampToEdge)
+
+    return tex
 
 
 glyphFormatString :: FT_Glyph_Format -> String
