@@ -50,7 +50,7 @@ main = do
     putStrLn "Starting."
     True  <- GLFW.init
     defaultWindowHints
-    wvar  <- makeNewWindow (100,100) (800,800) "Title"
+    wvar  <- makeNewWindow (100,100) (200,200) "Font Rendering"
 
     -- Make sure our font lives.
     font   <- fmap (++ "/fonts/UbuntuMono-R.ttf") getCurrentDirectory
@@ -118,7 +118,7 @@ loop wvar app = do
         w' = fromIntegral w
         h' = fromIntegral h
         proj = orthoMatrix 0 1 0 1 0 1 :: Matrix GLfloat
-        modl = identityN 4 `multiply` scaleMatrix3d 0.5 0.5 1 :: Matrix GLfloat
+        modl = identityN 4 --`multiply` scaleMatrix3d 0.5 0.5 1 :: Matrix GLfloat
 
     -- Render the app in the window.
     makeContextCurrent $ Just win

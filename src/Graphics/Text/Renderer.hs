@@ -89,7 +89,7 @@ initTextRenderer rsrc = do
 
     -- Load the font atlas.
     t <- case rsrc of
-        Font font  -> loadCharacter font '‡' 251
+        Font font  -> loadCharacter font 'Z' 251
         Bitmap bmp -> do Just t <- initTexture bmp 0
                          return t
 
