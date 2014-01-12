@@ -4,11 +4,9 @@ module Graphics.Texture.Load where
 import Codec.Picture
 import Graphics.Utils
 import Graphics.Rendering.OpenGL
-import Graphics.Rendering.OpenGL.GL
 import Control.Monad                (when, unless)
 import Data.Vector.Storable         (unsafeWith, Storable)
 import Data.Maybe                   (isNothing)
-import System.IO                    (hPutStrLn, stderr)
 
 
 initTexture :: FilePath -- ^ The texture to load.

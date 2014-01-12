@@ -10,26 +10,21 @@ import Graphics.Rendering.FreeType.Internal.FaceType
 import Graphics.Rendering.FreeType.Internal.Face
 import Graphics.Rendering.FreeType.Internal.GlyphSlot
 import Foreign
-import Foreign.Marshal.Alloc
 import Foreign.C.String
-import Foreign.Storable
 import Graphics.Rendering.FreeType.Internal.Bitmap
-import Foreign.Marshal.Array
 import Graphics.Texture.Load
 import Graphics.Utils
-import Data.Int
-import Data.Word
-import Data.List
-import Codec.Picture
 
 
 loadCharacter :: FilePath -> Char -> Int -> IO TextureObject
 loadCharacter path char px = do
     -- FreeType (http://freetype.org/freetype2/docs/tutorial/step1.html)
     ft <- freeType
+
     -- Get the Ubuntu Mono fontface.
     ff <- fontFace ft path
     runFreeType $ ft_Set_Pixel_Sizes ff (fromIntegral px) 0
+
     -- Get the unicode char index.
     chNdx <- ft_Get_Char_Index ff $ fromIntegral $ fromEnum char
 
@@ -46,23 +41,26 @@ loadCharacter path char px = do
     fmt <- peek $ format slot
     putStrLn $ "glyph format:" ++ glyphFormatString fmt
 
+    -- This is [] for Ubuntu Mono, but I'm guessing for bitmap
+    -- fonts this would be populated with the different font
+    -- sizes.
     putStr "Sizes:"
     numSizes <- peek $ num_fixed_sizes ff
-    sizesPtr <- peek $ available_sizes ff 
+    sizesPtr <- peek $ available_sizes ff
     sizes <- forM [0 .. numSizes-1] $ \i ->
         peek $ sizesPtr `plusPtr` fromIntegral i :: IO BS.FT_Bitmap_Size
     print sizes
-        
 
     l <- peek $ bitmap_left slot
     t <- peek $ bitmap_top slot
     putStrLn $ concat [ "left:"
-                      , show l 
-                      , "\ntop:" 
+                      , show l
+                      , "\ntop:"
                       , show t
                       ]
 
     runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
+
     -- Get the char bitmap.
     bmp <- peek $ bitmap slot
     putStrLn $ concat ["width:"
@@ -81,7 +79,7 @@ loadCharacter path char px = do
 
     let w  = fromIntegral $ width bmp
         h  = fromIntegral $ rows bmp
-        w' = fromIntegral w
+        w' = fromIntegral w :: Integer
         h' = fromIntegral h
         p  = 4 - w `mod` 4
         nw = p + fromIntegral w'
@@ -90,7 +88,7 @@ loadCharacter path char px = do
 
     -- Get the raw bitmap data.
     bmpData <- peekArray (w*h) $ buffer bmp
-    
+
     let data' = addPadding p w 0 bmpData
 
     -- Set the texture params on our bound texture.
@@ -121,10 +119,10 @@ loadCharacter path char px = do
 
 addPadding :: Int -> Int -> a -> [a] -> [a]
 addPadding _ _ _ [] = []
-addPadding amt width val xs = a ++ b ++ c 
-    where a = take width xs 
-          b = replicate amt val 
-          c = addPadding amt width val (drop width xs)
+addPadding amt w val xs = a ++ b ++ c
+    where a = take w xs
+          b = replicate amt val
+          c = addPadding amt w val (drop w xs)
 
 
 glyphFormatString :: FT_Glyph_Format -> String
