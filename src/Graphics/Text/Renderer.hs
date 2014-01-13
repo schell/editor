@@ -137,22 +137,22 @@ loadChar f a c =
 
 drawTextAt :: TextRenderer -> (GLfloat, GLfloat) -> String -> IO ()
 drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
-    where foldCharacter (x',y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize)) 
+    where foldCharacter (x',y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize))
           foldCharacter p c          = drawCharacter r p c
 
 
 drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)
-drawCharacter r (x,y) ' ' = 
-    let mChar = IM.lookup 0 $ r^.atlas.atlasMap 
-    in 
+drawCharacter r (x,y) ' ' =
+    let mChar = IM.lookup 0 $ r^.atlas.atlasMap
+    in
     case mChar of
         -- Worst case scenario we advance by the pixel size.
         Nothing -> return (x + fromIntegral (r^.atlas.atlasPxSize), y)
         Just (FontChar _ (w,_) ndx) -> do
             let Atlas _ ff _ _ = r^.atlas
             NormGMetrics _ advp <- fmap normalizeGlyphMetrics $ glyphMetrics ff ndx
-            let w'  = fromIntegral w 
-                adv = realToFrac advp * w' 
+            let w'  = fromIntegral w
+                adv = realToFrac advp * w'
             return (x + adv, y)
 
 drawCharacter r (x,y) char =
@@ -197,7 +197,7 @@ normalizeGlyphMetrics m = NormGMetrics bxy adv
     where bX  = (fromIntegral $ horiBearingX m) % fromIntegral (GM.width m)
           bY  = (fromIntegral $ horiBearingY m) % fromIntegral (GM.height m)
           bxy = (bX,bY)
-          adv = fromIntegral (horiAdvance m) % fromIntegral (GM.width m) 
+          adv = fromIntegral (horiAdvance m) % fromIntegral (GM.width m)
 
 
 initTextRenderer :: FilePath -> Int -> IO TextRenderer
