@@ -1,120 +1,81 @@
 module Graphics.Text.Font where
 
-import Control.Monad
-import Graphics.Rendering.OpenGL hiding (bitmap)
-import Graphics.Rendering.FreeType.Internal
+import           Control.Monad
+import           Control.Lens
+import           Graphics.Rendering.OpenGL hiding (bitmap)
+import           Graphics.Rendering.FreeType.Internal
+import           Graphics.Rendering.FreeType.Internal.PrimitiveTypes
+import           Graphics.Rendering.FreeType.Internal.Library
+import           Graphics.Rendering.FreeType.Internal.FaceType
+import           Graphics.Rendering.FreeType.Internal.Face
+import           Graphics.Rendering.FreeType.Internal.GlyphSlot
+import           Foreign
+import           Foreign.C.String
+import           Graphics.Rendering.FreeType.Internal.Bitmap
+import           Graphics.Texture.Load
+import           Graphics.Utils
+import           Graphics.Types
 import qualified Graphics.Rendering.FreeType.Internal.BitmapSize as BS
-import Graphics.Rendering.FreeType.Internal.PrimitiveTypes
-import Graphics.Rendering.FreeType.Internal.Library
-import Graphics.Rendering.FreeType.Internal.FaceType
-import Graphics.Rendering.FreeType.Internal.Face
-import Graphics.Rendering.FreeType.Internal.GlyphSlot
-import Foreign
-import Foreign.C.String
-import Graphics.Rendering.FreeType.Internal.Bitmap
-import Graphics.Texture.Load
-import Graphics.Utils
+import qualified Data.IntMap as IM
 
-
-loadCharacter :: FilePath -> Char -> Int -> IO TextureObject
-loadCharacter path char px = do
-    -- FreeType (http://freetype.org/freetype2/docs/tutorial/step1.html)
-    ft <- freeType
-
-    -- Get the Ubuntu Mono fontface.
-    ff <- fontFace ft path
-    runFreeType $ ft_Set_Pixel_Sizes ff (fromIntegral px) 0
+loadCharacter :: Atlas -> Char -> Int -> IO Atlas
+loadCharacter a char texUnit = do
+    let ff = _atlasFontFace a
+        cNdx = fromEnum char
 
     -- Get the unicode char index.
-    chNdx <- ft_Get_Char_Index ff $ fromIntegral $ fromEnum char
+    glyphNdx <- ft_Get_Char_Index ff $ fromIntegral cNdx
+
+    loadGlyph a glyphNdx cNdx texUnit
+
+
+loadGlyph :: Atlas -> FT_UInt -> Int -> Int -> IO Atlas
+loadGlyph a glyphNdx cNdx texUnit = do
+    let ft = _atlasFreeType a
+        ff = _atlasFontFace a
 
     -- Load the glyph into freetype memory.
-    runFreeType $ ft_Load_Glyph ff chNdx 0
+    runFreeType $ ft_Load_Glyph ff glyphNdx 0
 
     -- Get the GlyphSlot.
     slot <- peek $ glyph ff
 
-    -- Number of glyphs
-    n <- peek $ num_glyphs ff
-    putStrLn $ "glyphs:" ++ show n
-
-    fmt <- peek $ format slot
-    putStrLn $ "glyph format:" ++ glyphFormatString fmt
-
-    -- This is [] for Ubuntu Mono, but I'm guessing for bitmap
-    -- fonts this would be populated with the different font
-    -- sizes.
-    putStr "Sizes:"
-    numSizes <- peek $ num_fixed_sizes ff
-    sizesPtr <- peek $ available_sizes ff
-    sizes <- forM [0 .. numSizes-1] $ \i ->
-        peek $ sizesPtr `plusPtr` fromIntegral i :: IO BS.FT_Bitmap_Size
-    print sizes
-
-    l <- peek $ bitmap_left slot
-    t <- peek $ bitmap_top slot
-    putStrLn $ concat [ "left:"
-                      , show l
-                      , "\ntop:"
-                      , show t
-                      ]
-
-    runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
-
     -- Get the char bitmap.
+    runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
     bmp <- peek $ bitmap slot
-    putStrLn $ concat ["width:"
-                      , show $ width bmp
-                      , " rows:"
-                      , show $ rows bmp
-                      , " pitch:"
-                      , show $ pitch bmp
-                      , " num_grays:"
-                      , show $ num_grays bmp
-                      , " pixel_mode:"
-                      , show $ pixel_mode bmp
-                      , " palette_mode:"
-                      , show $ palette_mode bmp
-                      ]
 
     let w  = fromIntegral $ width bmp
         h  = fromIntegral $ rows bmp
-        w' = fromIntegral w :: Integer
+        w' = fromIntegral w
         h' = fromIntegral h
-        p  = 4 - w `mod` 4
-        nw = p + fromIntegral w'
-
-    putStrLn $ "padding by " ++ show p
-
-    -- Get the raw bitmap data.
-    bmpData <- peekArray (w*h) $ buffer bmp
-
-    let data' = addPadding p w 0 bmpData
 
     -- Set the texture params on our bound texture.
     texture Texture2D $= Enabled
 
+    -- Set the alignment to 1 byte.
+    rowAlignment Unpack $= 1
+
     -- Generate an opengl texture.
-    tex <- newBoundTexUnit 0
+    tex <- newBoundTexUnit texUnit
     printError
 
-    putStrLn "Buffering glyph bitmap into texture."
-    withArray data' $ \ptr -> texImage2D
+    texImage2D
         Texture2D
         NoProxy
         0
         R8
-        (TextureSize2D (fromIntegral nw) h')
+        (TextureSize2D w' h')
         0
-        (PixelData Red UnsignedByte ptr)
+        (PixelData Red UnsignedByte $ buffer bmp)
     printError
 
-    putStrLn "Texture loaded."
     textureFilter   Texture2D   $= ((Linear', Nothing), Linear')
     textureWrapMode Texture2D S $= (Repeated, ClampToEdge)
     textureWrapMode Texture2D T $= (Repeated, ClampToEdge)
-
-    return tex
+    return $ a & atlasMap %~ IM.insert cNdx FontChar { _fcTextureObject = tex
+                                                     , _fcTextureSize = (w,h)
+                                                     , _fcGlyphIndex = glyphNdx
+                                                     }
 
 
 addPadding :: Int -> Int -> a -> [a] -> [a]
