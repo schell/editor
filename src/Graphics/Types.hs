@@ -10,6 +10,7 @@ import Graphics.Rendering.FreeType.Internal.GlyphMetrics
 import Graphics.Rendering.FreeType.Internal.SizeMetrics
 import Data.Ratio
 import qualified Data.IntMap as IM
+import qualified Data.Map as M
 
 
 data TextResource  = Font FilePath | Bitmap FilePath
@@ -33,6 +34,14 @@ data Atlas = Atlas { _atlasFreeType :: FT_Library
                    , _atlasMap      :: IM.IntMap FontChar
                    }
 makeLenses ''Atlas
+
+
+-- | Keys an atlas by the px size of the rendered glyphs it holds.
+type FontMap = IM.IntMap Atlas
+
+
+-- | Keys a `FontMap` by the name of the font.
+type FontCache = M.Map String FontMap
 
 
 type Rendering = IO (IO ())

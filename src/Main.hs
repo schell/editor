@@ -50,7 +50,7 @@ main = do
     putStrLn "Starting."
     True  <- GLFW.init
     defaultWindowHints
-    wvar  <- makeNewWindow (2,10) (2000,200) "Font Rendering"
+    wvar  <- makeNewWindow (0,0) (742,508) "Font Rendering"
 
     -- Make sure our font lives.
     font <- fmap (++ "/fonts/UbuntuMono-B.ttf") getCurrentDirectory
@@ -58,7 +58,10 @@ main = do
     exists <- doesFileExist font
     unless exists $ fail $ font ++ " does not exist."
 
-    textRenderer <- initTextRenderer font 16
+    let load tr = loadCharMap tr testText
+    textRenderer <- initTextRenderer font 16 >>= load
+
+    clearColor $= Color4 0.03 0.17 0.21 1.0
 
     iterateM_ (loop wvar) $ App textRenderer (0,0)
 
@@ -75,7 +78,8 @@ makeNewWindow pos size title = do
     setCharCallback win $ Just $ \_ c ->
         input mvar $ CharEvent c
 
-    setWindowSizeCallback win $ Just $ \win' w h ->
+    setWindowSizeCallback win $ Just $ \win' w h -> do
+        print (w,h)
         input mvar $ WindowSizeEvent w h
 
     setKeyCallback win $ Just $ \win' k i ks mod ->
@@ -114,13 +118,10 @@ loop wvar app = do
     (w, h) <- getWindowSize win
 
     -- Process the input.
-    let a@(App tr _) = processEvents app es
+    let a@(App r _) = processEvents app es
         w' = fromIntegral w
         h' = fromIntegral h
         proj = orthoMatrix 0 (fromIntegral w) 0 (fromIntegral h) 0 1 :: Matrix GLfloat
-
-    font <- fmap (++ "/fonts/UbuntuMono-R.ttf") getCurrentDirectory
-    r <- loadCharMap tr font testText
 
     -- Render the app in the window.
     makeContextCurrent $ Just win
@@ -128,7 +129,7 @@ loop wvar app = do
     viewport $= (Position 0 0, Size w' h')
     currentProgram $= (Just $ r^.textProgram.program)
     r^.setSampler $ Index1 0
-    r^.setTextColor $ Color4 1.0 1.0 1.0 1.0
+    r^.setTextColor $ Color4 0.52 0.56 0.50 1.0
     r^.textProgram.setProjection $ concat proj
     drawTextAt r (0,0) testText
     swapBuffers win
@@ -137,17 +138,20 @@ loop wvar app = do
     shouldClose <- windowShouldClose win
     makeContextCurrent Nothing
     when shouldClose exitSuccess
-    return a{_textRenderer = r}
+    return a
 
 
 processEvents :: App -> [InputEvent] -> App
 processEvents (App tr cp) = App tr . foldr process cp
-    where process (CursorMoveEvent x y) a = (x,y)
+    where process (CursorMoveEvent x y) _ = (x,y)
           process _ a = a
 
 
 testText :: String
-testText = concat [ "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)\n"
+testText = concat [ "module FontRenderingIsSeriousBusiness where"
+                  , "\n"
+                  , "\n"
+                  , "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)\n"
                   , "drawCharacter r (x,y) char =\n"
                   , "    let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap\n"
                   , "    in\n"
@@ -177,3 +181,4 @@ testText = concat [ "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char
                   , "            r^.quadUVRender\n"
                   , "            return (x + a, y)\n"
                   ]
+
