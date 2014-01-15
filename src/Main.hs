@@ -2,27 +2,12 @@ module Main where
 
 import Graphics.UI.GLFW as GLFW
 import Control.Concurrent.MVar
-import Control.Applicative
 import Control.Monad
 import Control.Monad.Loops
 import Control.Lens
 import System.Exit
 import System.Directory
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
-import Graphics.Rendering.FreeType.Internal
-import Graphics.Rendering.FreeType.Internal.PrimitiveTypes
-import Graphics.Rendering.FreeType.Internal.Library
-import Graphics.Rendering.FreeType.Internal.FaceType
-import Graphics.Rendering.FreeType.Internal.Face
-import Graphics.Rendering.FreeType.Internal.GlyphSlot
-import Graphics.Rendering.FreeType.Internal.Bitmap
-import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
-import Foreign.C.Types
-import Foreign.C.String
-import Foreign.Storable
-import Graphics.Text.Font
-import Codec.Picture
 import Graphics.Text.Renderer
 import Graphics.Math
 
@@ -78,23 +63,23 @@ makeNewWindow pos size title = do
     setCharCallback win $ Just $ \_ c ->
         input mvar $ CharEvent c
 
-    setWindowSizeCallback win $ Just $ \win' w h -> do
+    setWindowSizeCallback win $ Just $ \_ w h -> do
         print (w,h)
         input mvar $ WindowSizeEvent w h
 
-    setKeyCallback win $ Just $ \win' k i ks mod ->
-        input mvar $ KeyEvent k i ks mod
+    setKeyCallback win $ Just $ \_ k i ks modi ->
+        input mvar $ KeyEvent k i ks modi
 
-    setMouseButtonCallback win $ Just $ \win' mb mbs mod ->
-        input mvar $ MouseButtonEvent mb mbs mod
+    setMouseButtonCallback win $ Just $ \_ mb mbs modi ->
+        input mvar $ MouseButtonEvent mb mbs modi
 
-    setCursorPosCallback win $ Just $ \win' x y ->
+    setCursorPosCallback win $ Just $ \_ x y ->
         input mvar $ CursorMoveEvent x y
 
-    setCursorEnterCallback win $ Just $ \win' cs ->
+    setCursorEnterCallback win $ Just $ \_ cs ->
         input mvar $ CursorEnterEvent cs
 
-    setScrollCallback win $ Just $ \win' x y ->
+    setScrollCallback win $ Just $ \_ x y ->
         input mvar $ ScrollEvent x y
 
     return mvar
@@ -127,10 +112,10 @@ loop wvar app = do
     makeContextCurrent $ Just win
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size w' h')
-    currentProgram $= (Just $ r^.textProgram.program)
-    r^.setSampler $ Index1 0
-    r^.setTextColor $ Color4 0.52 0.56 0.50 1.0
-    r^.textProgram.setProjection $ concat proj
+    currentProgram $= (Just $ r^.textProgram.tShader.program)
+    r^.textProgram.setSampler $ Index1 0
+    r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
+    r^.textProgram.tShader.setProjection $ concat proj
     drawTextAt r (0,0) testText
     swapBuffers win
 
