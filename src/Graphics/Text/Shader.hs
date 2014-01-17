@@ -32,7 +32,7 @@ fragSrc = B.intercalate "\n"
 
     , "void main() {"
     , "    vec4 tc = texture2D(sampler, vec2(vTex.s,vTex.t));"
-    , "    gl_FragColor = vec4(1,0,0,1);//vec4(color.r,color.g,color.b,tc.r);"
+    , "    gl_FragColor = vec4(color.r,color.g,color.b,tc.r);"
     , "}"
     ]
 

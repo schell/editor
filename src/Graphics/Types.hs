@@ -50,9 +50,10 @@ data ShaderProgram = ShaderProgram { _program :: Program
 makeLenses ''ShaderProgram
 
 
-data TextShaderProgram = TextShaderProgram { _tShader      :: ShaderProgram
-                                           , _setSampler   :: Index1 GLint -> IO ()
-                                           , _setTextColor :: Color4 GLfloat -> IO ()
+data TextShaderProgram = TextShaderProgram { _tShader        :: ShaderProgram
+                                           , _setSampler     :: Index1 GLint -> IO ()
+                                           , _setTextColor   :: Color4 GLfloat -> IO ()
+                                           , _renderTexQuad :: IO ()
                                            }
 makeLenses ''TextShaderProgram
 

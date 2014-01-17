@@ -7,6 +7,7 @@ module Graphics.Text.Renderer (
 ) where
 
 import           Graphics.Utils
+import           Graphics.Math
 import           Graphics.Types as T
 import           Graphics.Text.Font
 import           Graphics.Text.Shader
@@ -66,36 +67,35 @@ drawCharacter r (x,y) ' ' =
                 adv = realToFrac advp * w'
             return (x + adv, y)
 
-drawCharacter _ (x,y) _ = return (x,y)
---drawCharacter r (x,y) char =
---    let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
---    in
---    case mChar of
---        Nothing -> return (x,y)
---        Just (FontChar (w,h) (offX, offY) (NormGMetrics (bXp, bYp) advp)) -> do
---            let Atlas _ tex _ pxS _ = r^.atlas
---
---            -- Find the scaled (normalized) glyph metrics and use those to
---            -- typeset our character.
---            -- TODO: Add kerning.
---            let sW = fromIntegral w
---                sH = fromIntegral h
---                x' = x + sW * realToFrac bXp
---                y' = (y + fromIntegral pxS) - sH * realToFrac bYp
---                a  = realToFrac advp * sW
---                txy = translationMatrix3d x' y' 0
---                sxy = scaleMatrix3d sW sH 1 :: Matrix GLfloat
---                mv  = identityN 4 :: Matrix GLfloat
---                mv' = mv `multiply` txy `multiply` sxy
---
---            -- Do some standard GL texture stuffs and render our quad with
---            -- the char's texture.
---            texture Texture2D $= Enabled
---            activeTexture $= TextureUnit 0
---            textureBinding Texture2D $= Just tex
---            r^.textProgram.setModelview $ concat mv'
---            r^.quadUVRender
---            return (x + a, y)
+drawCharacter r (x,y) char =
+    let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
+    in
+    case mChar of
+        Nothing -> return (x,y)
+        Just (FontChar (w,h) (offX, offY) (NormGMetrics (bXp, bYp) advp)) -> do
+            let Atlas _ tex _ pxS _ = r^.atlas
+
+            -- Find the scaled (normalized) glyph metrics and use those to
+            -- typeset our character.
+            -- TODO: Add kerning.
+            let sW = fromIntegral w
+                sH = fromIntegral h
+                x' = x + sW * realToFrac bXp
+                y' = (y + fromIntegral pxS) - sH * realToFrac bYp
+                a  = realToFrac advp * sW
+                txy = translationMatrix3d x' y' 0
+                sxy = scaleMatrix3d sW sH 1 :: Matrix GLfloat
+                mv  = identityN 4 :: Matrix GLfloat
+                mv' = mv `multiply` txy `multiply` sxy
+
+            -- Do some standard GL texture stuffs and render our quad with
+            -- the char's texture.
+            texture Texture2D $= Enabled
+            activeTexture $= TextureUnit 0
+            textureBinding Texture2D $= Just tex
+            r^.textProgram.tShader.setModelview $ concat mv'
+            r^.textProgram.renderTexQuad
+            return (x + a, y)
 
 
 initTextRenderer :: FilePath -> Int -> IO TextRenderer
@@ -149,23 +149,24 @@ initTextRenderer font px = do
         bufferData ArrayBuffer $= (fromIntegral size', ptr, StaticDraw)
 
 
-    --let quadUV = do bindVBO i vertDescriptor $ AttribLocation 0
-    --                bindVBO j uvDescriptor $ AttribLocation 1
-    --                drawArrays Triangles 0 6
-    --                bindBuffer ArrayBuffer $= Nothing
+    let quadUV = do bindVBO i vertDescriptor $ AttribLocation 0
+                    bindVBO j uvDescriptor $ AttribLocation 1
+                    drawArrays Triangles 0 6
+                    bindBuffer ArrayBuffer $= Nothing
 
     putStrLn $ "Initializing atlas at size " ++ show px
     a <- initAtlas font px
 
 
-    return TextRenderer { _textProgram = 
+    return TextRenderer { _textProgram =
                             TextShaderProgram { _tShader =
-                                    ShaderProgram { _program = p 
-                                                  , _setModelview  = updateMV 
-                                                  , _setProjection = updatePJ 
-                                                  } 
-                                              , _setSampler = updateSampler 
+                                    ShaderProgram { _program = p
+                                                  , _setModelview  = updateMV
+                                                  , _setProjection = updatePJ
+                                                  }
+                                              , _setSampler = updateSampler
                                               , _setTextColor = updateColor
+                                              , _renderTexQuad = quadUV
                                               }
                         , _atlas = a
                         }

@@ -27,8 +27,6 @@ import           Graphics.Text.Shader
 -- It does so by rendering a glyph to a texture then draws the original
 -- atlas and the glyph texture into a framebuffer that is used as the new
 -- atlas.
---
--- https://developer.apple.com/library/ios/documentation/3ddrawing/conceptual/opengles_programmingguide/WorkingwithEAGLContexts/WorkingwithEAGLContexts.html#//apple_ref/doc/uid/TP40008793-CH103-SW6
 loadCharacter :: TextShaderProgram -> Atlas -> Char -> IO Atlas
 loadCharacter tsp a char = do
     let fp       = _atlasFontFilePath a
@@ -46,11 +44,12 @@ loadCharacter tsp a char = do
 
     -- Create the destination texture, and attach it to the framebuffer’s
     -- color attachment point.
-    --rowAlignment Unpack $= 1
     tex <- genObjectName
-    texture Texture2D $= Enabled
+    activeTexture $= TextureUnit 0
     textureBinding Texture2D $= Just tex
-    textureFilter Texture2D $= ((Linear', Just Linear'), Linear')
+    texture Texture2D $= Enabled
+    rowAlignment Unpack $= 1
+    textureFilter Texture2D $= ((Nearest, Nothing), Nearest)
     textureWrapMode Texture2D S $= (Repeated, ClampToEdge)
     textureWrapMode Texture2D T $= (Repeated, ClampToEdge)
 
@@ -68,7 +67,6 @@ loadCharacter tsp a char = do
     bindFramebuffer Framebuffer $= fb
     framebufferTexture2D Framebuffer (ColorAttachment 0) Texture2D tex 0
 
-    drawBuffers $= [FBOColorAttachment 0]
     -- Test for completeness.
     status <- glCheckFramebufferStatus gl_FRAMEBUFFER
 
@@ -77,24 +75,30 @@ loadCharacter tsp a char = do
                   then "incomplete attachment"
                   else show status
 
+    printError
+
+    activeTexture $= TextureUnit 0
     -- Draw the two textures next to each other to form our new
     -- atlas.
-    let vs x y ww hh = [ x, y
-                       , x + ww, y
-                       , x + ww, y + hh
-                       , x, y + hh
-                       ]
+    let vs   = [ 0,0
+               , 1,0
+               , 1,1
+               , 0,1
+               ] :: [GLfloat]
         aW'  = fromIntegral aW :: GLfloat
-        aH'  = fromIntegral aH
-        avs  = vs 0 0 aW' aH'
-        gvs  = vs aW' 0 aW' aH'
-        auvs = vs 0 0 1 1 :: [GLfloat]
-        guvs = auvs
         w''  = fromIntegral w'
         h''  = fromIntegral h'
         pj   = orthoMatrix 0 w'' 0 h'' 0 1
         mv   = identityN 4
         scl  = scaleMatrix3d w'' h'' 1
+        tns  = translationMatrix3d aW' 0 0
+        mva  = mv `multiply` scl 
+        mvg  = mv `multiply` tns `multiply` scl
+
+    bindFramebuffer Framebuffer $= fb
+
+    depthClamp $= Disabled
+    depthMask $= Disabled
 
     clear [ColorBuffer]
     viewport $= (Position 0 0, Size w' h')
@@ -102,26 +106,29 @@ loadCharacter tsp a char = do
     tsp^.setSampler $ Index1 0
     tsp^.setTextColor $ Color4 1 0 0 1
     tsp^.tShader.setProjection $ concat pj
-    tsp^.tShader.setModelview $ concat $ mv `multiply` scl
 
     -- Buffer and draw verts and uvs
-    forM_ [(avs,auvs,aTex),(gvs,guvs,charTex)] $ \(verts,uvs,t) -> do
+    forM_ [(mva,aTex),(mvg,charTex)] $ \(mv',t) -> do
         -- Bind and buffer verts.
         [i,j] <- genObjectNames 2
         bindVBO i vertDescriptor $ AttribLocation 0
-        withArray avs $ \ptr ->
-            bufferData ArrayBuffer $= (fromIntegral $ length verts, ptr, StaticDraw)
+        withArray vs $ \ptr ->
+            bufferData ArrayBuffer $= (fromIntegral $ length vs, ptr, StaticDraw)
         -- Bind and buffer uvs.
         bindVBO j uvDescriptor $ AttribLocation 1
-        withArray uvs $ \ptr ->
-            bufferData ArrayBuffer $= (fromIntegral $ length uvs, ptr, StaticDraw)
+        withArray vs $ \ptr ->
+            bufferData ArrayBuffer $= (fromIntegral $ length vs, ptr, StaticDraw)
+
+        tsp^.tShader.setModelview $ concat mv'
+
         -- Bind our texture.
-        texture Texture2D $= Enabled
         activeTexture $= TextureUnit 0
+        texture Texture2D $= Enabled
         textureBinding Texture2D $= Just t
         drawArrays TriangleFan 0 4
         bindBuffer ArrayBuffer $= Nothing
         deleteObjectNames [i,j]
+        printError
 
     currentProgram $= Nothing
     bindFramebuffer Framebuffer $= defaultFramebufferObject
@@ -136,6 +143,41 @@ loadCharacter tsp a char = do
         atlasMap %= IM.insert (fromEnum char) (FontChar (gW,gH) gOffset gMtrx)
         atlasTextureObject .= tex
         atlasTextureSize .= (w,h)
+
+
+renderQuadTex :: [GLfloat] -- ^ Projection matrix.
+              -> [GLfloat] -- ^ Modelview matrix.
+              -> TextureObject -- ^ The texture.
+              -> IO ()
+renderQuadTex pj mv tex = do
+    let vs = [ 0,0
+             , 1,0
+             , 1,1
+             , 0,1
+             ] :: [GLfloat]
+        us = vs
+
+    -- Bind and buffer verts.
+    [i,j] <- genObjectNames 2
+
+    bindVBO i vertDescriptor $ AttribLocation 0
+    withArray vs $ \ptr ->
+        bufferData ArrayBuffer $= (fromIntegral $ length vs, ptr, StaticDraw)
+    -- Bind and buffer uvs.
+    bindVBO j uvDescriptor $ AttribLocation 1
+    withArray us $ \ptr ->
+        bufferData ArrayBuffer $= (fromIntegral $ length us, ptr, StaticDraw)
+
+    -- Bind our texture.
+    activeTexture $= TextureUnit 0
+    texture Texture2D $= Enabled
+    textureBinding Texture2D $= Just tex
+    drawArrays TriangleFan 0 4
+    bindBuffer ArrayBuffer $= Nothing
+    deleteObjectNames [i,j]
+    printError
+
+    
 
 
 texturizeGlyphOfEnum :: Enum a => FilePath -> Int -> a -> IO (TextureObject, FontChar)
@@ -160,6 +202,8 @@ texturizeGlyphOfEnum file px enm = do
         h  = fromIntegral $ rows bmp
         w' = fromIntegral w
         h' = fromIntegral h
+
+    activeTexture $= TextureUnit 0
 
     -- Set the texture params on our bound texture.
     texture Texture2D $= Enabled
