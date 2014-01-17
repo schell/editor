@@ -34,19 +34,16 @@ initAtlas fp px = do
 
 
 loadCharMap :: TextRenderer -> String -> IO TextRenderer
-loadCharMap r str = do
-    -- Load the font atlas for this string.
-    a <- foldM (loadChar $ r^.textProgram) (r^.atlas) str
-    return $ r & atlas .~ a
+loadCharMap r str = foldM loadChar r str
 
 
-loadChar :: TextShaderProgram -> Atlas -> Char -> IO Atlas
-loadChar tsp a c =
+loadChar :: TextRenderer -> Char -> IO TextRenderer
+loadChar r c =
     let i = fromEnum c
     in
-    case IM.lookup i (a^.atlasMap) of
-        Just _  -> return a
-        Nothing -> loadCharacter tsp a c
+    case IM.lookup i (r^.atlas.atlasMap) of
+        Just _  -> return r
+        Nothing -> loadCharacter r c
 
 
 drawTextAt :: TextRenderer -> (GLfloat, GLfloat) -> String -> IO ()

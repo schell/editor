@@ -44,10 +44,8 @@ main = do
     exists <- doesFileExist font
     unless exists $ fail $ font ++ " does not exist."
 
-    clearColor $= Color4 0.03 0.17 0.21 1.0
-
     let load tr = loadCharMap tr testText
-    textRenderer <- initTextRenderer font 16 -- >>= load
+    textRenderer <- initTextRenderer font 16 >>= load
 
     iterateM_ (loop wvar) $ App textRenderer (0,0)
 
@@ -105,42 +103,11 @@ loop wvar app = do
 
     -- Process the input.
     let a@(App r _) = processEvents app es
-        w' = fromIntegral w
-        h' = fromIntegral h
 
     makeContextCurrent $ Just win
-
-    fb <- genObjectName
-    bindFramebuffer Framebuffer $= fb
-
-    t <- genObjectName
-    textureBinding Texture2D $= Just t
-    textureFilter Texture2D $= ((Linear', Nothing), Linear')
-    texImage2D
-        Texture2D
-        NoProxy
-        0
-        R8 
-        (TextureSize2D w' h')
-        0
-        (PixelData RGB UnsignedByte nullPtr)
-
-    framebufferTexture2D Framebuffer (ColorAttachment 0) Texture2D t 0
-
-    status <- get $ framebufferStatus Framebuffer
-    unless (status == Complete) $ do
-        print status
-        exitFailure
-    renderWith r (w, h)
-    bindFramebuffer Framebuffer $= defaultFramebufferObject
-
     -- Render the app in the window.
     renderWith r (w, h)
     swapBuffers win
-
-    deleteObjectName t
-    deleteObjectName fb
-
 
     -- Quit if need be.
     shouldClose <- windowShouldClose win
@@ -154,14 +121,14 @@ renderWith r (w, h) = do
         h' = fromIntegral h
         proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat
 
+    clearColor $= Color4 0.03 0.17 0.21 1.0
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
     currentProgram $= (Just $ r^.textProgram.tShader.program)
     r^.textProgram.setSampler $ Index1 0
     r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
     r^.textProgram.tShader.setProjection $ concat proj
-    drawTextAt r (0,0) "\NUL\NUL\NUL  \NUL\n   \NUL"
-
+    drawTextAt r (0,0) testText
 
 
 processEvents :: App -> [InputEvent] -> App
