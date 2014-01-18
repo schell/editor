@@ -3,6 +3,7 @@ module Graphics.Utils where
 import           Graphics.Rendering.OpenGL
 import           Control.Monad
 import           Data.Char
+import           Foreign.Ptr
 import           System.IO (hPutStrLn, stderr)
 import           System.Exit (exitFailure)
 import qualified Data.ByteString as B
@@ -48,6 +49,35 @@ bindVBO vbo dsc loc = do
     bindBuffer ArrayBuffer $= Just vbo
     vertexAttribPointer loc $= (ToFloat, dsc)
     vertexAttribArray loc $= Enabled
+
+renderToTexture :: (GLsizei, GLsizei) -> PixelInternalFormat -> IO () -> IO TextureObject
+renderToTexture (w,h) fmt ioF = do
+    putStrLn $ "renderToTexture: " ++ show (w,h)
+    fb <- genObjectName
+    bindFramebuffer Framebuffer $= fb
+
+    tex <- genObjectName
+    textureBinding Texture2D $= Just tex
+    textureFilter Texture2D $= ((Linear', Nothing), Linear')
+    texImage2D
+        Texture2D
+        NoProxy
+        0
+        fmt
+        (TextureSize2D w h)
+        0
+        (PixelData RGB UnsignedByte nullPtr)
+    framebufferTexture2D Framebuffer (ColorAttachment 0) Texture2D tex 0
+
+    status <- get $ framebufferStatus Framebuffer
+    unless (status == Complete) $ do
+        print status
+        exitFailure
+
+    ioF
+    bindFramebuffer Framebuffer $= defaultFramebufferObject
+    deleteObjectName fb
+    return tex
 
 
 charIndex :: Char -> Int

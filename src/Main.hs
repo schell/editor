@@ -7,7 +7,6 @@ import Control.Monad.Loops
 import Control.Lens
 import System.Exit
 import System.Directory
-import Foreign.Ptr
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
 import Graphics.Text.Renderer
 import Graphics.Math
@@ -115,6 +114,7 @@ loop wvar app = do
     when shouldClose exitSuccess
     return a
 
+
 renderWith :: TextRenderer -> (Int, Int) -> IO ()
 renderWith r (w, h) = do
     let w' = fromIntegral w
@@ -125,7 +125,6 @@ renderWith r (w, h) = do
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
     currentProgram $= (Just $ r^.textProgram.tShader.program)
-    r^.textProgram.setSampler $ Index1 0
     r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
     r^.textProgram.tShader.setProjection $ concat proj
     drawTextAt r (0,0) testText
@@ -137,8 +136,13 @@ processEvents (App tr cp) = App tr . foldr process cp
           process _ a = a
 
 
+testTextOrd :: String
+testTextOrd = "A()BCDabcd0123  Hello\nOlé()"
+
 testText :: String
-testText = concat [ "module FontRenderingIsSeriousBusiness where"
+testText = concat [ "[]"
+                  , "\n"
+                  , "module FontRenderingIsSeriousBusiness where"
                   , "\n"
                   , "\n"
                   , "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)\n"
