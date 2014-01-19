@@ -3,6 +3,7 @@ module Graphics.Text.Shader where
 
 import           Graphics.Rendering.OpenGL hiding (Bitmap, Matrix)
 import           Foreign
+import           Graphics.Utils
 import qualified Data.ByteString as B
 
 
@@ -43,3 +44,18 @@ vertDescriptor = VertexArrayDescriptor 2 Float 0 nullPtr
 
 uvDescriptor :: VertexArrayDescriptor [Float]
 uvDescriptor = vertDescriptor
+
+
+bindAndBufferVertsUVs :: [GLfloat] -> [GLfloat] -> IO (BufferObject, BufferObject)
+bindAndBufferVertsUVs vts uvs = do
+    [i,j] <- genObjectNames 2
+
+    bindVBO i vertDescriptor $ AttribLocation 0
+    withArray vts $ \ptr -> do
+        bufferData ArrayBuffer $= (sizeOfList vts, ptr, StaticDraw)
+
+    bindVBO j uvDescriptor $ AttribLocation 1
+    withArray uvs $ \ptr -> do
+        bufferData ArrayBuffer $= (sizeOfList uvs, ptr, StaticDraw)
+
+    return (i,j)

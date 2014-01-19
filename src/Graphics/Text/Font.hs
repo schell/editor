@@ -27,11 +27,11 @@ texturizeGlyphOfEnum file px enm = do
     runFreeType $ ft_Set_Pixel_Sizes ff 0 $ fromIntegral px
 
     ndx <- case fromEnum enm of
-               -- Since we load the missing glyph with character '\NUL' 
+               -- Since we load the missing glyph with character '\NUL'
                -- and the glyph index of '\NUL' can be non-zero
-               -- we have to check here and explicitly get the missing 
+               -- we have to check here and explicitly get the missing
                -- glyph.
-               0 -> return 0 
+               0 -> return 0
                e -> ft_Get_Char_Index ff $ fromIntegral e
 
     -- Load the glyph into freetype memory.

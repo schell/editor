@@ -4,6 +4,7 @@ import           Graphics.Rendering.OpenGL
 import           Control.Monad
 import           Data.Char
 import           Foreign.Ptr
+import           Foreign
 import           System.IO (hPutStrLn, stderr)
 import           System.Exit (exitFailure)
 import qualified Data.ByteString as B
@@ -11,6 +12,10 @@ import qualified Data.ByteString as B
 
 printError :: IO ()
 printError = get errors >>= mapM_ (hPutStrLn stderr . ("GL: "++) . show)
+
+
+sizeOfList :: [GLfloat] -> GLsizeiptr
+sizeOfList = fromIntegral . (* sizeOf (undefined :: GLfloat)) . length
 
 
 makeShader :: ShaderType -> B.ByteString -> IO Shader
@@ -136,4 +141,24 @@ stringToVerts = fst . foldl f acc
               | otherwise = (vs ++ lst x y, (x+1, y))
           acc     = ([], (0.0, 0.0))
           lst x y = [x,y,x+1,y,x+1,y+1,x,y,x+1,y+1,x,y+1]
+
+
+-- | Returns vertices for a two-tri quad.
+-- Assumes (0,0) is the upper left, y incresing downward.
+quad :: Num a => a -> a -> a -> a -> [a]
+quad x y w h = [x, y, x + w, y, x + w, y + h, x, y, x + w, y + h, x, y + h]
+
+
+-- | Returns uvs for a two-tri quad.
+-- Assums (0,0) is the lower left, y incresing upward.
+texQuad :: Num a => a -> a -> a -> a -> [a]
+texQuad x y w h =
+    [ x, y + h
+    , x + w , y + h
+    , x + w, y
+    , x, y + h
+    , x + w, y
+    , x, y
+    ]
+
 

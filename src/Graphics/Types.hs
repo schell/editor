@@ -7,6 +7,9 @@ import qualified Data.IntMap as IM
 import qualified Data.Map as M
 
 
+type PenPosition = (GLfloat, GLfloat)
+
+
 data NormalizedGlyphMetrics = NormGMetrics { _ngmBearing :: (Rational, Rational)
                                            , _ngmAdvance :: Rational
                                            } deriving (Show, Eq)
