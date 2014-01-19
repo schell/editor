@@ -4,165 +4,39 @@ module Graphics.Text.Renderer (
     initTextRenderer,
     drawTextAt,
     loadCharMap,
-    TextResource(..)
 ) where
 
 import           Graphics.Utils
+import           Graphics.Text.Character
 import           Graphics.Types as T
-import           Graphics.Math
 import           Graphics.Text.Font
+import           Graphics.Text.Shader
 import           Graphics.Rendering.OpenGL hiding (Bitmap, Matrix)
 import           Graphics.Rendering.OpenGL.Raw
-import           Graphics.Rendering.FreeType.Internal
-import           Graphics.Rendering.FreeType.Internal.Face
-import           Graphics.Rendering.FreeType.Internal.GlyphMetrics as GM
-import           Graphics.Rendering.FreeType.Internal.GlyphSlot as GS
 import           Control.Monad
 import           Control.Lens
-import           Data.Ratio
 import           Foreign
-import           Foreign.C.Types
-import qualified Data.ByteString as B
 import qualified Data.IntMap as IM
-
-
-vertSrc :: B.ByteString
-vertSrc = B.intercalate "\n"
-    [ "attribute vec2 position;"
-    , "attribute vec2 uv;"
-
-    , "varying vec2 vTex; "
-
-    , "uniform mat4 modelview;"
-    , "uniform mat4 projection;"
-
-    , "void main () {"
-    , "    vTex = uv;"
-    , "    gl_Position = projection * modelview * vec4(position, 0.0, 1.0);"
-    , "}"
-    ]
-
-
-fragSrc :: B.ByteString
-fragSrc = B.intercalate "\n"
-    [ "varying vec2 vTex;"
-
-    , "uniform sampler2D sampler;"
-    , "uniform vec4 color;"
-
-    , "void main() {"
-    , "    vec4 tc = texture2D(sampler, vec2(vTex.s,vTex.t));"
-    , "    gl_FragColor = vec4(color.r,color.g,color.b,tc.r);"
-    , "}"
-    ]
-
-
-vertDescriptor :: VertexArrayDescriptor [Float]
-vertDescriptor = VertexArrayDescriptor 2 Float 0 nullPtr
-
-
-uvDescriptor :: VertexArrayDescriptor [Float]
-uvDescriptor = vertDescriptor
-
 
 initAtlas :: FilePath -> Int -> IO Atlas
 initAtlas fp px = do
-    -- FreeType (http://freetype.org/freetype2/docs/tutorial/step1.html)
-    ft <- freeType
+    -- Get the missing glyph as a texture and FontChar.
+    (tex, fChar) <- texturizeGlyphOfEnum fp px '\NUL'
 
-    -- Get the fontface.
-    ff <- fontFace ft fp
-    let px' = fromIntegral px
-    putStrLn $ "Got pixel size " ++ show px ++ ", setting font size to " ++ show px'
-    runFreeType $ ft_Set_Pixel_Sizes ff 0 px'
-
-    -- Load the missing glyph as the first char.
-    loadGlyph (Atlas ft ff px IM.empty) 0 0 0
-
-
-loadCharMap :: TextRenderer -> String -> IO TextRenderer
-loadCharMap r str = do
-    -- Load the font atlas for this string.
-    a <- foldM loadChar (r^.atlas) str
-    return $ r & atlas .~ a
+    -- Store that in our atlas.
+    return Atlas { _atlasFontFilePath = fp
+                 , _atlasTextureObject = tex
+                 , _atlasTextureSize = _fcTextureSize fChar
+                 , _atlasPxSize = px
+                 , _atlasMap = IM.insert 0 fChar IM.empty
+                 }
 
 
-loadChar :: Atlas -> Char -> IO Atlas
-loadChar a c =
-    let i = fromEnum c
-    in
-    case IM.lookup i (a^.atlasMap) of
-        Just _  -> return a
-        Nothing -> loadCharacter a c 0
 
-
-drawTextAt :: TextRenderer -> (GLfloat, GLfloat) -> String -> IO ()
+drawTextAt :: TextRenderer -> PenPosition -> String -> IO ()
 drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
     where foldCharacter (_,y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize))
           foldCharacter p c          = drawCharacter r p c
-
-
-drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)
-drawCharacter r (x,y) ' ' =
-    let mChar = IM.lookup 0 $ r^.atlas.atlasMap
-    in
-    case mChar of
-        -- Worst case scenario we advance by the pixel size.
-        Nothing -> return (x + fromIntegral (r^.atlas.atlasPxSize), y)
-        Just (FontChar _ (w,_) ndx) -> do
-            let Atlas _ ff _ _ = r^.atlas
-            NormGMetrics _ advp <- fmap normalizeGlyphMetrics $ glyphMetrics ff ndx
-            let w'  = fromIntegral w
-                adv = realToFrac advp * w'
-            return (x + adv, y)
-
-drawCharacter r (x,y) char =
-    let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
-    in
-    case mChar of
-        Nothing -> return (x,y)
-        Just (FontChar tex (w,h) ndx) -> do
-            let Atlas _ ff pxS _ = r^.atlas
-
-            -- Get the metrics about the char.
-            NormGMetrics (bXp,bYp) advp <- fmap normalizeGlyphMetrics $ glyphMetrics ff ndx
-
-            -- Find the scaled (normalized) glyph metrics and use those to
-            -- typeset our character.
-            -- TODO: Add kerning.
-            let sW = fromIntegral w
-                sH = fromIntegral h
-                x' = x + sW * realToFrac bXp
-                y' = (y + fromIntegral pxS) - sH * realToFrac bYp
-                a  = realToFrac advp * sW
-                txy = translationMatrix3d x' y' 0
-                sxy = scaleMatrix3d sW sH 1 :: Matrix GLfloat
-                mv  = identityN 4 :: Matrix GLfloat
-                mv' = mv `multiply` txy `multiply` sxy
-
-            -- Do some standard GL texture stuffs and render our quad with
-            -- the char's texture.
-            texture Texture2D $= Enabled
-            activeTexture $= TextureUnit 0
-            textureBinding Texture2D $= Just tex
-            r^.textProgram.setModelview $ concat mv'
-            r^.quadUVRender
-            return (x + a, y)
-
-
-glyphMetrics :: FT_Face -> CUInt -> IO FT_Glyph_Metrics
-glyphMetrics ff ndx = do
-    runFreeType $ ft_Load_Glyph ff ndx 0
-    slot <- peek $ glyph ff
-    peek $ GS.metrics slot
-
-
-normalizeGlyphMetrics :: FT_Glyph_Metrics -> NormalizedGlyphMetrics
-normalizeGlyphMetrics m = NormGMetrics bxy adv
-    where bX  = fromIntegral (horiBearingX m) % fromIntegral (GM.width m)
-          bY  = fromIntegral (horiBearingY m) % fromIntegral (GM.height m)
-          bxy = (bX,bY)
-          adv = fromIntegral (horiAdvance m) % fromIntegral (GM.width m)
 
 
 initTextRenderer :: FilePath -> Int -> IO TextRenderer
@@ -194,15 +68,9 @@ initTextRenderer font px = do
 
 
 
-    let verts = [ 0, 0
-                , 1, 0
-                , 1, 1
-                , 0, 0
-                , 1, 1
-                , 0, 1
-                ] :: [GLfloat]
-        uvs    = verts
-        size'  = length verts * sizeOf (undefined :: Float)
+    let verts = quad 0 0 1 1 :: [GLfloat]
+        uvs   = verts
+        size' = length verts * sizeOf (undefined :: Float)
     [i,j] <- genObjectNames 2
 
     -- Buffer the verts
@@ -225,13 +93,16 @@ initTextRenderer font px = do
     a <- initAtlas font px
 
 
-    return TextRenderer { _textProgram    = RndrProgram3D { _program = p
-                                                          , _setModelview  = updateMV
-                                                          , _setProjection = updatePJ
-                                                          }
-                        , _setSampler = updateSampler
-                        , _setTextColor = updateColor
+    return TextRenderer { _textProgram =
+                            TextShaderProgram { _tShader =
+                                    ShaderProgram { _program = p
+                                                  , _setModelview  = updateMV
+                                                  , _setProjection = updatePJ
+                                                  }
+                                              , _setSampler = updateSampler
+                                              , _setTextColor = updateColor
+                                              , _renderTexQuad = quadUV
+                                              }
                         , _atlas = a
-                        , _quadUVRender = quadUV
                         }
 

@@ -2,27 +2,12 @@ module Main where
 
 import Graphics.UI.GLFW as GLFW
 import Control.Concurrent.MVar
-import Control.Applicative
 import Control.Monad
 import Control.Monad.Loops
 import Control.Lens
 import System.Exit
 import System.Directory
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
-import Graphics.Rendering.FreeType.Internal
-import Graphics.Rendering.FreeType.Internal.PrimitiveTypes
-import Graphics.Rendering.FreeType.Internal.Library
-import Graphics.Rendering.FreeType.Internal.FaceType
-import Graphics.Rendering.FreeType.Internal.Face
-import Graphics.Rendering.FreeType.Internal.GlyphSlot
-import Graphics.Rendering.FreeType.Internal.Bitmap
-import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
-import Foreign.C.Types
-import Foreign.C.String
-import Foreign.Storable
-import Graphics.Text.Font
-import Codec.Picture
 import Graphics.Text.Renderer
 import Graphics.Math
 
@@ -61,8 +46,6 @@ main = do
     let load tr = loadCharMap tr testText
     textRenderer <- initTextRenderer font 16 >>= load
 
-    clearColor $= Color4 0.03 0.17 0.21 1.0
-
     iterateM_ (loop wvar) $ App textRenderer (0,0)
 
 
@@ -78,23 +61,23 @@ makeNewWindow pos size title = do
     setCharCallback win $ Just $ \_ c ->
         input mvar $ CharEvent c
 
-    setWindowSizeCallback win $ Just $ \win' w h -> do
+    setWindowSizeCallback win $ Just $ \_ w h -> do
         print (w,h)
         input mvar $ WindowSizeEvent w h
 
-    setKeyCallback win $ Just $ \win' k i ks mod ->
-        input mvar $ KeyEvent k i ks mod
+    setKeyCallback win $ Just $ \_ k i ks modi ->
+        input mvar $ KeyEvent k i ks modi
 
-    setMouseButtonCallback win $ Just $ \win' mb mbs mod ->
-        input mvar $ MouseButtonEvent mb mbs mod
+    setMouseButtonCallback win $ Just $ \_ mb mbs modi ->
+        input mvar $ MouseButtonEvent mb mbs modi
 
-    setCursorPosCallback win $ Just $ \win' x y ->
+    setCursorPosCallback win $ Just $ \_ x y ->
         input mvar $ CursorMoveEvent x y
 
-    setCursorEnterCallback win $ Just $ \win' cs ->
+    setCursorEnterCallback win $ Just $ \_ cs ->
         input mvar $ CursorEnterEvent cs
 
-    setScrollCallback win $ Just $ \win' x y ->
+    setScrollCallback win $ Just $ \_ x y ->
         input mvar $ ScrollEvent x y
 
     return mvar
@@ -119,19 +102,10 @@ loop wvar app = do
 
     -- Process the input.
     let a@(App r _) = processEvents app es
-        w' = fromIntegral w
-        h' = fromIntegral h
-        proj = orthoMatrix 0 (fromIntegral w) 0 (fromIntegral h) 0 1 :: Matrix GLfloat
 
-    -- Render the app in the window.
     makeContextCurrent $ Just win
-    clear [ColorBuffer, DepthBuffer]
-    viewport $= (Position 0 0, Size w' h')
-    currentProgram $= (Just $ r^.textProgram.program)
-    r^.setSampler $ Index1 0
-    r^.setTextColor $ Color4 0.52 0.56 0.50 1.0
-    r^.textProgram.setProjection $ concat proj
-    drawTextAt r (0,0) testText
+    -- Render the app in the window.
+    renderWith r (w, h)
     swapBuffers win
 
     -- Quit if need be.
@@ -141,14 +115,34 @@ loop wvar app = do
     return a
 
 
+renderWith :: TextRenderer -> (Int, Int) -> IO ()
+renderWith r (w, h) = do
+    let w' = fromIntegral w
+        h' = fromIntegral h
+        proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat
+
+    clearColor $= Color4 0.03 0.17 0.21 1.0
+    clear [ColorBuffer, DepthBuffer]
+    viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
+    currentProgram $= (Just $ r^.textProgram.tShader.program)
+    r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
+    r^.textProgram.tShader.setProjection $ concat proj
+    drawTextAt r (0,0) testText
+
+
 processEvents :: App -> [InputEvent] -> App
 processEvents (App tr cp) = App tr . foldr process cp
     where process (CursorMoveEvent x y) _ = (x,y)
           process _ a = a
 
 
+testTextOrd :: String
+testTextOrd = "A()BCDabcd0123  Hello\nOlé()"
+
 testText :: String
-testText = concat [ "module FontRenderingIsSeriousBusiness where"
+testText = concat [ "[]"
+                  , "\n"
+                  , "module FontRenderingIsSeriousBusiness where"
                   , "\n"
                   , "\n"
                   , "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)\n"

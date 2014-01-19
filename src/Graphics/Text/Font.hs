@@ -1,41 +1,41 @@
 module Graphics.Text.Font where
 
 import           Control.Monad
-import           Control.Lens
-import           Graphics.Rendering.OpenGL hiding (bitmap)
+import           Graphics.Rendering.OpenGL hiding (bitmap, Matrix)
 import           Graphics.Rendering.FreeType.Internal
 import           Graphics.Rendering.FreeType.Internal.PrimitiveTypes
 import           Graphics.Rendering.FreeType.Internal.Library
 import           Graphics.Rendering.FreeType.Internal.FaceType
 import           Graphics.Rendering.FreeType.Internal.Face
-import           Graphics.Rendering.FreeType.Internal.GlyphSlot
+import           Graphics.Rendering.FreeType.Internal.Bitmap as BM
+import           Graphics.Rendering.FreeType.Internal.GlyphSlot as GS
+import           Graphics.Rendering.FreeType.Internal.GlyphMetrics as GM
+import           Data.Ratio
 import           Foreign
 import           Foreign.C.String
-import           Graphics.Rendering.FreeType.Internal.Bitmap
 import           Graphics.Texture.Load
 import           Graphics.Utils
 import           Graphics.Types
-import qualified Graphics.Rendering.FreeType.Internal.BitmapSize as BS
-import qualified Data.IntMap as IM
-
-loadCharacter :: Atlas -> Char -> Int -> IO Atlas
-loadCharacter a char texUnit = do
-    let ff = _atlasFontFace a
-        cNdx = fromEnum char
-
-    -- Get the unicode char index.
-    glyphNdx <- ft_Get_Char_Index ff $ fromIntegral cNdx
-
-    loadGlyph a glyphNdx cNdx texUnit
 
 
-loadGlyph :: Atlas -> FT_UInt -> Int -> Int -> IO Atlas
-loadGlyph a glyphNdx cNdx texUnit = do
-    let ft = _atlasFreeType a
-        ff = _atlasFontFace a
+texturizeGlyphOfEnum :: Enum a => FilePath -> Int -> a -> IO (TextureObject, FontChar)
+texturizeGlyphOfEnum file px enm = do
+    ft <- freeType
+    ff <- fontFace ft file
+
+    -- Set the size of the glyph
+    runFreeType $ ft_Set_Pixel_Sizes ff 0 $ fromIntegral px
+
+    ndx <- case fromEnum enm of
+               -- Since we load the missing glyph with character '\NUL'
+               -- and the glyph index of '\NUL' can be non-zero
+               -- we have to check here and explicitly get the missing
+               -- glyph.
+               0 -> return 0
+               e -> ft_Get_Char_Index ff $ fromIntegral e
 
     -- Load the glyph into freetype memory.
-    runFreeType $ ft_Load_Glyph ff glyphNdx 0
+    runFreeType $ ft_Load_Glyph ff ndx 0
 
     -- Get the GlyphSlot.
     slot <- peek $ glyph ff
@@ -44,10 +44,13 @@ loadGlyph a glyphNdx cNdx texUnit = do
     runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
     bmp <- peek $ bitmap slot
 
-    let w  = fromIntegral $ width bmp
+    let w  = fromIntegral $ BM.width bmp
         h  = fromIntegral $ rows bmp
         w' = fromIntegral w
         h' = fromIntegral h
+
+
+    activeTexture $= TextureUnit 0
 
     -- Set the texture params on our bound texture.
     texture Texture2D $= Enabled
@@ -56,7 +59,7 @@ loadGlyph a glyphNdx cNdx texUnit = do
     rowAlignment Unpack $= 1
 
     -- Generate an opengl texture.
-    tex <- newBoundTexUnit texUnit
+    tex <- newBoundTexUnit 0
     printError
 
     texImage2D
@@ -72,10 +75,15 @@ loadGlyph a glyphNdx cNdx texUnit = do
     textureFilter   Texture2D   $= ((Linear', Nothing), Linear')
     textureWrapMode Texture2D S $= (Repeated, ClampToEdge)
     textureWrapMode Texture2D T $= (Repeated, ClampToEdge)
-    return $ a & atlasMap %~ IM.insert cNdx FontChar { _fcTextureObject = tex
-                                                     , _fcTextureSize = (w,h)
-                                                     , _fcGlyphIndex = glyphNdx
-                                                     }
+
+    nGlyphMetrics <- fmap normalizeGlyphMetrics $ peek $ GS.metrics slot
+
+    runFreeType $ ft_Done_FreeType ft
+
+    return (tex, FontChar { _fcTextureSize = (w, h)
+                          , _fcTextureOffset = (0, 0)
+                          , _fcNormMetrics = nGlyphMetrics
+                          })
 
 
 addPadding :: Int -> Int -> a -> [a] -> [a]
@@ -93,6 +101,14 @@ glyphFormatString fmt
     | fmt == ft_GLYPH_FORMAT_PLOTTER = "ft_GLYPH_FORMAT_PLOTTER"
     | fmt == ft_GLYPH_FORMAT_BITMAP = "ft_GLYPH_FORMAT_BITMAP"
     | otherwise = "ft_GLYPH_FORMAT_NONE"
+
+
+normalizeGlyphMetrics :: FT_Glyph_Metrics -> NormalizedGlyphMetrics
+normalizeGlyphMetrics m = NormGMetrics bxy adv
+    where bX  = fromIntegral (horiBearingX m) % fromIntegral (GM.width m)
+          bY  = fromIntegral (horiBearingY m) % fromIntegral (GM.height m)
+          bxy = (bX,bY)
+          adv = fromIntegral (horiAdvance m) % fromIntegral (GM.width m)
 
 
 runFreeType :: IO FT_Error -> IO ()

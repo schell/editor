@@ -3,35 +3,31 @@ module Graphics.Types where
 
 import Graphics.Rendering.OpenGL
 import Control.Lens
-import Foreign.C.Types
-import Graphics.Rendering.FreeType.Internal.Library
-import Graphics.Rendering.FreeType.Internal.Face
-import Graphics.Rendering.FreeType.Internal.GlyphMetrics
-import Graphics.Rendering.FreeType.Internal.SizeMetrics
-import Data.Ratio
 import qualified Data.IntMap as IM
 import qualified Data.Map as M
 
 
-data TextResource  = Font FilePath | Bitmap FilePath
-
-
-data FontChar = FontChar { _fcTextureObject :: TextureObject
-                         , _fcTextureSize   :: (Int,Int)
-                         , _fcGlyphIndex    :: CUInt
-                         } deriving (Show, Eq)
-makeLenses ''FontChar
+type PenPosition = (GLfloat, GLfloat)
 
 
 data NormalizedGlyphMetrics = NormGMetrics { _ngmBearing :: (Rational, Rational)
                                            , _ngmAdvance :: Rational
-                                           }
+                                           } deriving (Show, Eq)
 
 
-data Atlas = Atlas { _atlasFreeType :: FT_Library
-                   , _atlasFontFace :: FT_Face
-                   , _atlasPxSize   :: Int
-                   , _atlasMap      :: IM.IntMap FontChar
+data FontChar = FontChar { _fcTextureSize   :: (Int, Int)
+                         , _fcTextureOffset :: (Int, Int)
+                         , _fcNormMetrics   :: NormalizedGlyphMetrics
+                         } deriving (Show, Eq)
+makeLenses ''FontChar
+
+
+
+data Atlas = Atlas { _atlasFontFilePath  :: FilePath
+                   , _atlasTextureObject :: TextureObject
+                   , _atlasTextureSize   :: (Int, Int)
+                   , _atlasPxSize        :: Int
+                   , _atlasMap           :: IM.IntMap FontChar
                    }
 makeLenses ''Atlas
 
@@ -50,23 +46,28 @@ type Rendering = IO (IO ())
 type MatrixUpdate = [GLfloat] -> IO ()
 
 
-data RndrProgram3D = RndrProgram3D { _program :: Program
+data ShaderProgram = ShaderProgram { _program :: Program
                                    , _setProjection :: MatrixUpdate
                                    , _setModelview  :: MatrixUpdate
                                    }
-makeLenses ''RndrProgram3D
+makeLenses ''ShaderProgram
 
 
-data TextRenderer = TextRenderer { _textProgram  :: RndrProgram3D
-                                 , _setSampler   :: Index1 GLint -> IO ()
-                                 , _setTextColor :: Color4 GLfloat -> IO ()
+data TextShaderProgram = TextShaderProgram { _tShader        :: ShaderProgram
+                                           , _setSampler     :: Index1 GLint -> IO ()
+                                           , _setTextColor   :: Color4 GLfloat -> IO ()
+                                           , _renderTexQuad :: IO ()
+                                           }
+makeLenses ''TextShaderProgram
+
+
+data TextRenderer = TextRenderer { _textProgram  :: TextShaderProgram
                                  , _atlas        :: Atlas
-                                 , _quadUVRender :: IO ()
                                  }
 makeLenses ''TextRenderer
 
 
-data QuadRenderer = QuadRenderer { _quadProgram  :: RndrProgram3D
+data QuadRenderer = QuadRenderer { _qShader      :: ShaderProgram
                                  , _rndrQuad     :: IO ()
                                  , _setQuadColor :: Color4 GLfloat -> IO ()
                                  }
