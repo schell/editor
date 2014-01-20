@@ -32,7 +32,6 @@ initAtlas fp px = do
                  }
 
 
-
 drawTextAt :: TextRenderer -> PenPosition -> String -> IO ()
 drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
     where foldCharacter (_,y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize))

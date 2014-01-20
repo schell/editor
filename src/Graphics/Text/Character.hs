@@ -116,17 +116,14 @@ drawCharacter r (x,y) ' ' =
     case mChar of
         -- Worst case scenario we advance by the pixel size.
         Nothing -> return (x + fromIntegral (r^.atlas.atlasPxSize), y)
-        Just (FontChar (w,_) _ (NormGMetrics _ advp)) -> do
-            let w'  = fromIntegral w
-                adv = realToFrac advp * w'
-            return (x + adv, y)
+        Just c -> return $ advancePenPosition (x,y) c
 
 drawCharacter r (x,y) char =
     let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
     in
     case mChar of
         Nothing -> return (x,y)
-        Just fc@(FontChar (w,h) _ (NormGMetrics (bXp, bYp) advp)) -> do
+        Just fc@(FontChar (w,h) _ (NormGMetrics (bXp, bYp) _)) -> do
             let Atlas _ tex (tSw,tSh) pxS _ = r^.atlas
 
             -- Find the scaled (normalized) glyph metrics and use those to
@@ -136,7 +133,6 @@ drawCharacter r (x,y) char =
                 sH = fromIntegral h
                 x' = x + sW * realToFrac bXp
                 y' = (y + fromIntegral pxS) - sH * realToFrac bYp
-                a  = realToFrac advp * sW
                 txy = translationMatrix3d x' y' 0
                 sxy = scaleMatrix3d sW sH 1 :: Matrix GLfloat
                 mv  = identityN 4 :: Matrix GLfloat
@@ -160,11 +156,19 @@ drawCharacter r (x,y) char =
 
             deleteObjectNames [i,j]
 
-            return (x + a, y)
+            return $ advancePenPosition (x,y) fc
 
 
--- | Returns the uv coords of the character in the font texture.
--- The texture atlas has the glyphs flipped in Y.
+-- | Returns the vertex coords of the given character at a pen position
+-- and the next pen position.
+-- The vertices are in pixel coordinates.
+fontCharVs :: FontChar -> PenPosition -> ([GLfloat], PenPosition)
+fontCharVs fc@(FontChar (w,h) _ _) (x,y) =
+    (quad x y (fromIntegral w) (fromIntegral h), advancePenPosition (x,y) fc)
+
+
+-- | Returns the uv coords of the given character with regard to a texture
+-- size. The texture atlas has the glyphs flipped in Y.
 fontCharUVs :: FontChar -> (GLfloat, GLfloat) -> [GLfloat]
 fontCharUVs (FontChar (w,h) (x,y) _) (tW,tH) =
     let x' = fromIntegral x/tW
@@ -174,6 +178,11 @@ fontCharUVs (FontChar (w,h) (x,y) _) (tW,tH) =
     in quad x' y' w' h'
 
 
+advancePenPosition :: PenPosition -> FontChar -> PenPosition
+advancePenPosition (x,y) (FontChar (w,_) _ (NormGMetrics _ advp)) =
+    let w'  = fromIntegral w
+        adv = realToFrac advp * w'
+    in (x + adv, y)
 
 
 -- | Renders a texture object at a pen position using the program in the
