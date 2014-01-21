@@ -127,7 +127,7 @@ renderWith r (w, h) = do
     currentProgram $= (Just $ r^.textProgram.tShader.program)
     r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
     r^.textProgram.tShader.setProjection $ concat proj
-    drawTextAt r (0,0) testText
+    drawTextAt' r (0,0) testText
 
 
 processEvents :: App -> [InputEvent] -> App

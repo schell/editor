@@ -10,6 +10,9 @@ import qualified Data.Map as M
 type PenPosition = (GLfloat, GLfloat)
 
 
+type BufferGeom = ([GLfloat], [GLfloat])
+
+
 data NormalizedGlyphMetrics = NormGMetrics { _ngmBearing :: (Rational, Rational)
                                            , _ngmAdvance :: Rational
                                            } deriving (Show, Eq)
@@ -22,7 +25,6 @@ data FontChar = FontChar { _fcTextureSize   :: (Int, Int)
 makeLenses ''FontChar
 
 
-
 data Atlas = Atlas { _atlasFontFilePath  :: FilePath
                    , _atlasTextureObject :: TextureObject
                    , _atlasTextureSize   :: (Int, Int)
@@ -30,6 +32,13 @@ data Atlas = Atlas { _atlasFontFilePath  :: FilePath
                    , _atlasMap           :: IM.IntMap FontChar
                    }
 makeLenses ''Atlas
+
+
+data BufferAccumulator = BufferAcc { _buffAccAtlas  :: Atlas
+                                   , _buffAccGeom   :: BufferGeom
+                                   , _buffAccPenPos :: PenPosition
+                                   }
+makeLenses ''BufferAccumulator
 
 
 -- | Keys an atlas by the px size of the rendered glyphs it holds.

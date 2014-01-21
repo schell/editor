@@ -3,10 +3,12 @@ module Graphics.Text.Renderer (
     module T,
     initTextRenderer,
     drawTextAt,
+    drawTextAt',
     loadCharMap,
 ) where
 
 import           Graphics.Utils
+import           Graphics.Math
 import           Graphics.Text.Character
 import           Graphics.Types as T
 import           Graphics.Text.Font
@@ -15,6 +17,7 @@ import           Graphics.Rendering.OpenGL hiding (Bitmap, Matrix)
 import           Graphics.Rendering.OpenGL.Raw
 import           Control.Monad
 import           Control.Lens
+import           Data.Monoid
 import           Foreign
 import qualified Data.IntMap as IM
 
@@ -35,7 +38,22 @@ initAtlas fp px = do
 drawTextAt :: TextRenderer -> PenPosition -> String -> IO ()
 drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
     where foldCharacter (_,y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize))
-          foldCharacter p c          = drawCharacter r p c
+          foldCharacter p c          = drawChar r p c
+
+
+drawTextAt' :: TextRenderer -> PenPosition -> String -> IO ()
+drawTextAt' r pen s = do
+    let (BufferAcc _ (vs,uvs) _) = geometryForString (BufferAcc (r^.atlas) mempty pen) s
+
+    (i,j) <- bindAndBufferVertsUVs vs uvs
+    texture Texture2D $= Enabled
+    activeTexture $= TextureUnit 0
+    textureBinding Texture2D $= Just (r^.atlas.atlasTextureObject)
+    r^.textProgram.setSampler $ Index1 0
+    r^.textProgram.tShader.setModelview $ concat $ identityN 4
+    drawArrays Triangles 0 $ fromIntegral $ 6 * length s
+    bindBuffer ArrayBuffer$= Nothing
+    deleteObjectNames [i,j]
 
 
 initTextRenderer :: FilePath -> Int -> IO TextRenderer

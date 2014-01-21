@@ -57,7 +57,6 @@ bindVBO vbo dsc loc = do
 
 renderToTexture :: (GLsizei, GLsizei) -> PixelInternalFormat -> IO () -> IO TextureObject
 renderToTexture (w,h) fmt ioF = do
-    putStrLn $ "renderToTexture: " ++ show (w,h)
     fb <- genObjectName
     bindFramebuffer Framebuffer $= fb
 
