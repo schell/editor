@@ -50,9 +50,11 @@ makeTextShaderProgram = do
 vertSrc :: B.ByteString
 vertSrc = $(embedFile "shaders/textshader.vert") 
 
+
 -- | GLSL Source code for a text fragment shader.
 fragSrc :: B.ByteString
 fragSrc = $(embedFile "shaders/textshader.frag") 
+
 
 -- | Vertex descriptor for a tex vertex shader.
 vertDescriptor :: VertexArrayDescriptor [Float]
