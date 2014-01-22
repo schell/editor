@@ -3,58 +3,16 @@ module Graphics.Utils where
 import           Graphics.Rendering.OpenGL
 import           Control.Monad
 import           Foreign.Ptr
-import           Foreign
 import           System.IO (hPutStrLn, stderr)
 import           System.Exit (exitFailure)
-import qualified Data.ByteString as B
 
 
+-- | Prints any accumulated OpenGL errors.
 printError :: IO ()
 printError = get errors >>= mapM_ (hPutStrLn stderr . ("GL: "++) . show)
 
 
-sizeOfList :: [GLfloat] -> GLsizeiptr
-sizeOfList = fromIntegral . (* sizeOf (undefined :: GLfloat)) . length
-
-
-makeShader :: ShaderType -> B.ByteString -> IO Shader
-makeShader ty src = do
-    s <- createShader ty
-    shaderSourceBS s $= src
-    compileShader s
-    s'Ok <- get $ compileStatus s
-    unless s'Ok $ do
-        slog <- get $ shaderInfoLog s
-        putStrLn $ "Log:" ++ slog
-        exitFailure
-    printError
-    return s
-
-
-makeProgram :: [Shader] -> [(String, AttribLocation)] -> IO Program
-makeProgram shaders attributes = do
-    p <- createProgram
-    mapM_ (attachShader p) shaders
-    mapM_ (\(name, loc) -> attribLocation p name $= loc) attributes
-    linkProgram p
-    p'Ok <- get $ linkStatus p
-    validateProgram p
-    status <- get $ validateStatus p
-    unless (p'Ok && status) $ do
-        plog <- get $ programInfoLog p
-        putStrLn plog
-        printError
-        exitFailure
-    return p
-
-
-bindVBO :: BufferObject -> VertexArrayDescriptor a -> AttribLocation -> IO ()
-bindVBO vbo dsc loc = do
-    bindBuffer ArrayBuffer $= Just vbo
-    vertexAttribPointer loc $= (ToFloat, dsc)
-    vertexAttribArray loc $= Enabled
-
-
+-- | Renders the IO () action into a framebuffer texture.
 renderToTexture :: (GLsizei, GLsizei) -> PixelInternalFormat -> IO () -> IO TextureObject
 renderToTexture (w,h) fmt ioF = do
     fb <- genObjectName
@@ -85,13 +43,13 @@ renderToTexture (w,h) fmt ioF = do
 
 
 -- | Returns vertices for a two-tri quad.
--- Assumes (0,0) is the upper left, y incresing downward.
+-- Assumes (0,0) is the upper left, y increasing downward.
 quad :: Num a => a -> a -> a -> a -> [a]
 quad x y w h = [x, y, x + w, y, x + w, y + h, x, y, x + w, y + h, x, y + h]
 
 
 -- | Returns uvs for a two-tri quad.
--- Assums (0,0) is the lower left, y incresing upward.
+-- Assumes (0,0) is the lower left, y incresing upward.
 texQuad :: Num a => a -> a -> a -> a -> [a]
 texQuad x y w h =
     [ x, y + h

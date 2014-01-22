@@ -8,12 +8,11 @@ import Control.Lens
 import System.Exit
 import System.Directory
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
-import Graphics.Text.Renderer
+import Graphics.Rendering.Text.Renderer
+import Graphics.Rendering.Text.Types
+import Graphics.Rendering.Shader.Text.Types
 import Graphics.Math
 import Editor.Types
-
-
-
 
 
 data App = App { _textRenderer :: TextRenderer
@@ -35,7 +34,7 @@ main = do
     unless exists $ fail $ font ++ " does not exist."
 
     let load tr = loadCharMap tr testText
-    textRenderer <- initTextRenderer font 16 >>= load
+    textRenderer <- makeTextRenderer font 16 >>= load
 
     iterateM_ (loop wvar) $ App textRenderer (0,0)
 
@@ -115,9 +114,9 @@ renderWith r (w, h) = do
     clearColor $= Color4 0.03 0.17 0.21 1.0
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
-    currentProgram $= (Just $ r^.textProgram.tShader.program)
-    r^.textProgram.setTextColor $ Color4 0.52 0.56 0.50 1.0
-    r^.textProgram.tShader.setProjection $ concat proj
+    currentProgram $= (Just $ r^.shader.program)
+    r^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
+    r^.shader.setProjection $ concat proj
     drawTextAt' r (0,0) testText
 
 
@@ -143,7 +142,7 @@ testText = concat [ "[]"
                   , "    case mChar of\n"
                   , "        Nothing -> return (x,y)\n"
                   , "        Just fc@(FontChar tex (w,h) ndx) -> do\n"
-                  , "            let p  = r^.textProgram.program\n"
+                  , "            let p  = r^.shader.program\n"
                   , "                Atlas _ ff pxS _ = r^.atlas\n"
                   , "\n"
                   , "            -- Get the metrics about the char.\n"
@@ -162,7 +161,7 @@ testText = concat [ "[]"
                   , "            texture Texture2D $= Enabled\n"
                   , "            activeTexture $= TextureUnit 0\n"
                   , "            textureBinding Texture2D $= Just tex\n"
-                  , "            r^.textProgram.setModelview $ concat mv'\n"
+                  , "            r^.shader.setModelview $ concat mv'\n"
                   , "            r^.quadUVRender\n"
                   , "            return (x + a, y)\n"
                   ]

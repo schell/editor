@@ -3,8 +3,7 @@ module Editor.Types where
 import           Graphics.UI.GLFW
 import           Control.Concurrent.MVar
 import           Data.Monoid
-import           Graphics.Text.Renderer
-import qualified Data.Map as M
+import           Graphics.Rendering.Text.Types
 
 
 data InputEvent = CharEvent Char
@@ -20,11 +19,11 @@ data InputEvent = CharEvent Char
 type WindowVar = MVar ([InputEvent], Window)
 
 
-data Editor = Editor { _editorWindowVar     :: Maybe WindowVar 
+data Editor = Editor { _editorWindowVar     :: Maybe WindowVar
                      , _editorTextRenderers :: [TextRenderer]
                      }
 
 instance Monoid Editor where
-    mempty = Editor Nothing [] 
+    mempty = Editor Nothing []
     mappend (Editor v b) (Editor _ d) = Editor v (b `mappend` d)
 

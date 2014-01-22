@@ -1,11 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Graphics.Text.Character where
+module Graphics.Rendering.Text.Character where
 
 import           Graphics.Utils
 import           Graphics.Math
-import           Graphics.Types as T
-import           Graphics.Text.Font
-import           Graphics.Text.Shader
+import           Graphics.Rendering.Text.Types
+import           Graphics.Rendering.Text.Font
+import           Graphics.Rendering.Shader.Text
 import           Graphics.Rendering.OpenGL hiding (Matrix, Bitmap)
 import           Control.Monad.State (execState)
 import           Control.Monad
@@ -65,16 +65,17 @@ loadCharacter r char = do
         clearColor $= Color4 0 0 0 1
         clear [ColorBuffer]
         viewport $= (Position 0 0, Size gW' gH')
-        currentProgram $= (Just $ r^.textProgram.tShader.program)
+        currentProgram $= (Just $ r^.shader.program)
         texture Texture2D $= Enabled
         activeTexture $= TextureUnit 0
         textureBinding Texture2D $= Just charTex
-        r^.textProgram.setSampler $ Index1 0
-        r^.textProgram.setTextColor $ Color4 1 0 0 1
-        r^.textProgram.tShader.setProjection $ concat pj
-        r^.textProgram.tShader.setModelview $ concat mv
+        r^.shader.setSampler $ Index1 0
+        r^.shader.setTextColor $ Color4 1 0 0 1
+        r^.shader.setProjection $ concat pj
+        r^.shader.setModelview $ concat mv
         (i,j) <- bindAndBufferVertsUVs vs us
-        r^.textProgram.renderTexQuad
+        drawArrays Triangles 0 6
+        bindBuffer ArrayBuffer $= Nothing
         deleteObjectNames [i,j]
 
     -- Then get rid of the old char texture.
@@ -89,8 +90,8 @@ loadCharacter r char = do
         clearColor $= Color4 0 0 0 1
         clear [ColorBuffer, DepthBuffer]
         viewport $= (Position 0 0, Size w' h')
-        currentProgram $= (Just $ r^.textProgram.tShader.program)
-        r^.textProgram.tShader.setProjection $ concat pj
+        currentProgram $= (Just $ r^.shader.program)
+        r^.shader.setProjection $ concat pj
         -- We have to render the atlas upside down.
         renderTex r aTex (0,0) (aW', aH')
         renderTex r charTex' (aW', 0) (gW'', gH'')
@@ -136,8 +137,8 @@ drawChar r pen char =
             texture Texture2D $= Enabled
             activeTexture $= TextureUnit 0
             textureBinding Texture2D $= Just tex
-            r^.textProgram.setSampler $ Index1 0
-            r^.textProgram.tShader.setModelview $ concat $ identityN 4
+            r^.shader.setSampler $ Index1 0
+            r^.shader.setModelview $ concat $ identityN 4
 
             drawArrays Triangles 0 6
             bindBuffer ArrayBuffer $= Nothing
@@ -229,7 +230,7 @@ charUVs (FontChar (w,h) (x,y) _) (tW,tH) =
         y' = fromIntegral y/tH
         w' = fromIntegral w/tW
         h' = fromIntegral h/tH
-    in quad x' y' w' h'
+    in texQuad x' y' w' h'
 
 
 -- | Adjusts the pen position by the characters horizontal and vertical
@@ -258,9 +259,9 @@ renderTex r t (x,y) (w,h) = do
         mv  = identityN 4 `multiply` tns `multiply` scl
         vts = texQuad 0 0 1 1
         uvs = texQuad 0 0 1 1
-    r^.textProgram.tShader.setModelview $ concat mv
-    r^.textProgram.setSampler $ Index1 0
-    r^.textProgram.setTextColor $ Color4 1 0 0 1
+    r^.shader.setModelview $ concat mv
+    r^.shader.setSampler $ Index1 0
+    r^.shader.setTextColor $ Color4 1 0 0 1
     texture Texture2D $= Enabled
     activeTexture $= TextureUnit 0
     textureBinding Texture2D $= Just t

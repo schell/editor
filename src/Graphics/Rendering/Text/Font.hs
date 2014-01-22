@@ -1,4 +1,6 @@
-module Graphics.Text.Font where
+module Graphics.Rendering.Text.Font (
+    texturizeGlyphOfEnum
+) where
 
 import           Control.Monad
 import           Graphics.Rendering.OpenGL hiding (bitmap, Matrix)
@@ -14,15 +16,15 @@ import           Data.Ratio
 import           Foreign
 import           Foreign.C.String
 import           Graphics.Texture.Load
-import           Graphics.Utils
-import           Graphics.Types
+import           Graphics.Rendering.Text.Types
 
 
+-- | Returns an opengl texture object and a FontChar containing metrics for
+-- the given enum. The enum should represent a character code.
 texturizeGlyphOfEnum :: Enum a => FilePath -> Int -> a -> IO (TextureObject, FontChar)
 texturizeGlyphOfEnum file px enm = do
     ft <- freeType
     ff <- fontFace ft file
-
     -- Set the size of the glyph
     runFreeType $ ft_Set_Pixel_Sizes ff 0 $ fromIntegral px
 
@@ -33,13 +35,10 @@ texturizeGlyphOfEnum file px enm = do
                -- glyph.
                0 -> return 0
                e -> ft_Get_Char_Index ff $ fromIntegral e
-
     -- Load the glyph into freetype memory.
     runFreeType $ ft_Load_Glyph ff ndx 0
-
     -- Get the GlyphSlot.
     slot <- peek $ glyph ff
-
     -- Get the char bitmap.
     runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
     bmp <- peek $ bitmap slot
@@ -49,18 +48,13 @@ texturizeGlyphOfEnum file px enm = do
         w' = fromIntegral w
         h' = fromIntegral h
 
-
     activeTexture $= TextureUnit 0
-
     -- Set the texture params on our bound texture.
     texture Texture2D $= Enabled
-
     -- Set the alignment to 1 byte.
     rowAlignment Unpack $= 1
-
     -- Generate an opengl texture.
     tex <- newBoundTexUnit 0
-    printError
 
     texImage2D
         Texture2D
@@ -70,39 +64,24 @@ texturizeGlyphOfEnum file px enm = do
         (TextureSize2D w' h')
         0
         (PixelData Red UnsignedByte $ buffer bmp)
-    printError
 
     textureFilter   Texture2D   $= ((Linear', Nothing), Linear')
     textureWrapMode Texture2D S $= (Repeated, ClampToEdge)
     textureWrapMode Texture2D T $= (Repeated, ClampToEdge)
 
+    -- Convert the metrics from font units to percentage of width/height.
     nGlyphMetrics <- fmap normalizeGlyphMetrics $ peek $ GS.metrics slot
-
+    -- Clean up.
     runFreeType $ ft_Done_FreeType ft
 
     return (tex, FontChar { _fcTextureSize = (w, h)
-                          , _fcTextureOffset = (0, 0)
+                          , _fcTextureOffset = (0, 0) -- No offset yet (comes later in the atlas).
                           , _fcNormMetrics = nGlyphMetrics
                           })
 
 
-addPadding :: Int -> Int -> a -> [a] -> [a]
-addPadding _ _ _ [] = []
-addPadding amt w val xs = a ++ b ++ c
-    where a = take w xs
-          b = replicate amt val
-          c = addPadding amt w val (drop w xs)
-
-
-glyphFormatString :: FT_Glyph_Format -> String
-glyphFormatString fmt
-    | fmt == ft_GLYPH_FORMAT_COMPOSITE = "ft_GLYPH_FORMAT_COMPOSITE"
-    | fmt == ft_GLYPH_FORMAT_OUTLINE = "ft_GLYPH_FORMAT_OUTLINE"
-    | fmt == ft_GLYPH_FORMAT_PLOTTER = "ft_GLYPH_FORMAT_PLOTTER"
-    | fmt == ft_GLYPH_FORMAT_BITMAP = "ft_GLYPH_FORMAT_BITMAP"
-    | otherwise = "ft_GLYPH_FORMAT_NONE"
-
-
+-- | Normalizes a freetype glyph metrics object to be relative to the width
+-- and height of the glyph.
 normalizeGlyphMetrics :: FT_Glyph_Metrics -> NormalizedGlyphMetrics
 normalizeGlyphMetrics m = NormGMetrics bxy adv
     where bX  = fromIntegral (horiBearingX m) % fromIntegral (GM.width m)
@@ -111,22 +90,21 @@ normalizeGlyphMetrics m = NormGMetrics bxy adv
           adv = fromIntegral (horiAdvance m) % fromIntegral (GM.width m)
 
 
+-- | Runs a FFI freetype operation and checks for error.
 runFreeType :: IO FT_Error -> IO ()
-runFreeType m = do
-    r <- m
-    unless (r == 0) $ fail $ "FreeType Error:" ++ show r
+runFreeType m = do r <- m
+                   unless (r == 0) $ fail $ "FreeType Error:" ++ show r
 
 
+-- | Retrieves a marshaled FT_Library to use in freetype calls.
 freeType :: IO FT_Library
-freeType = alloca $ \p -> do
-    runFreeType $ ft_Init_FreeType p
-    peek p
+freeType = alloca $ \p -> do runFreeType $ ft_Init_FreeType p
+                             peek p
 
 
+-- | Loads a font from file into a freetype font face.
 fontFace :: FT_Library -> FilePath -> IO FT_Face
 fontFace ft fp = withCString fp $ \str ->
-    alloca $ \ptr -> do
-        runFreeType $ ft_New_Face ft str 0 ptr
-        peek ptr
-
+    alloca $ \ptr -> do runFreeType $ ft_New_Face ft str 0 ptr
+                        peek ptr
 
