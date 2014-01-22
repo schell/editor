@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TemplateHaskell #-}
 module Graphics.Rendering.Shader.Text (
     module T,
     makeTextShaderProgram,
@@ -11,6 +11,7 @@ import           Graphics.Rendering.Shader.Text.Types as T
 import           Graphics.Rendering.OpenGL hiding (Bitmap, Matrix)
 import           Graphics.Rendering.OpenGL.Raw (glUniformMatrix4fv)
 import           Foreign
+import           Graphics.Rendering.Shader.TH 
 import qualified Data.ByteString as B
 
 
@@ -47,36 +48,11 @@ makeTextShaderProgram = do
 
 -- | GLSL Source code for a text vertex shader.
 vertSrc :: B.ByteString
-vertSrc = B.intercalate "\n"
-    [ "attribute vec2 position;"
-    , "attribute vec2 uv;"
-
-    , "varying vec2 vTex; "
-
-    , "uniform mat4 modelview;"
-    , "uniform mat4 projection;"
-
-    , "void main () {"
-    , "    vTex = uv;"
-    , "    gl_Position = projection * modelview * vec4(position, 0.0, 1.0);"
-    , "}"
-    ]
-
+vertSrc = $(embedFile "shaders/textshader.vert") 
 
 -- | GLSL Source code for a text fragment shader.
 fragSrc :: B.ByteString
-fragSrc = B.intercalate "\n"
-    [ "varying vec2 vTex;"
-
-    , "uniform sampler2D sampler;"
-    , "uniform vec4 color;"
-
-    , "void main() {"
-    , "    vec4 tc = texture2D(sampler, vec2(vTex.s,vTex.t));"
-    , "    gl_FragColor = vec4(color.r,color.g,color.b,tc.r);"
-    , "}"
-    ]
-
+fragSrc = $(embedFile "shaders/textshader.frag") 
 
 -- | Vertex descriptor for a tex vertex shader.
 vertDescriptor :: VertexArrayDescriptor [Float]
