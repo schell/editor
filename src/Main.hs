@@ -10,13 +10,16 @@ import System.Directory
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
 import Graphics.Rendering.Text.Renderer
 import Graphics.Rendering.Text.Types
-import Graphics.Rendering.Shader.Text.Types
+import Graphics.Rendering.Shader.Shape as S
+import Graphics.Rendering.Shader.Text as T
 import Graphics.Math
+import Graphics.Utils
 import Editor.Types
 
 
 data App = App { _textRenderer :: TextRenderer
                , _cursorPos :: (Double,Double)
+               , _shapeProgram :: ShapeShaderProgram
                }
 
 
@@ -25,7 +28,7 @@ main = do
     putStrLn "Starting."
     True  <- GLFW.init
     defaultWindowHints
-    wvar  <- makeNewWindow (0,0) (742,508) "Font Rendering"
+    wvar  <- makeNewWindow (0,0) (742,508) "Font Rendering Is Serious Business"
 
     -- Make sure our font lives.
     font <- fmap (++ "/fonts/UbuntuMono-B.ttf") getCurrentDirectory
@@ -36,7 +39,9 @@ main = do
     let load tr = loadCharMap tr testText
     textRenderer <- makeTextRenderer font 16 >>= load
 
-    iterateM_ (loop wvar) $ App textRenderer (0,0)
+    shapeShader <- makeShapeShaderProgram
+
+    iterateM_ (loop wvar) $ App textRenderer (0,0) shapeShader
 
 
 -- | Creates a new window. Fails and crashes if no window can be created.
@@ -91,11 +96,11 @@ loop wvar app = do
     (w, h) <- getWindowSize win
 
     -- Process the input.
-    let a@(App r _) = processEvents app es
+    let a@(App t _ s) = processEvents app es
 
     makeContextCurrent $ Just win
     -- Render the app in the window.
-    renderWith r (w, h)
+    renderWith t s (w, h)
     swapBuffers win
 
     -- Quit if need be.
@@ -105,8 +110,8 @@ loop wvar app = do
     return a
 
 
-renderWith :: TextRenderer -> (Int, Int) -> IO ()
-renderWith r (w, h) = do
+renderWith :: TextRenderer -> ShapeShaderProgram -> (Int, Int) -> IO ()
+renderWith t s (w, h) = do
     let w' = fromIntegral w
         h' = fromIntegral h
         proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat
@@ -114,14 +119,27 @@ renderWith r (w, h) = do
     clearColor $= Color4 0.03 0.17 0.21 1.0
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
-    currentProgram $= (Just $ r^.shader.program)
-    r^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
-    r^.shader.setProjection $ concat proj
-    drawTextAt' r (0,0) testText
+
+    -- Draw a blueish 100x100 square at 10 10
+    let vs = quad 10 10 100 100
+        cs = concat $ replicate 6 [0.07,0.21,0.26, 1]
+    currentProgram $= (Just $ s^.S.program)
+    s^.S.setProjection $ concat proj
+    s^.S.setModelview $ concat $ identityN 4
+    s^.setIsTextured $ False
+    (i,j) <- bindAndBufferVertsColors vs cs
+    drawArrays Triangles 0 6
+    deleteObjectNames [i,j]
+
+    -- Draw some text somewhere.
+    currentProgram $= (Just $ t^.shader.T.program)
+    t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
+    t^.shader.T.setProjection $ concat proj
+    drawTextAt' t (0,0) testText
 
 
 processEvents :: App -> [InputEvent] -> App
-processEvents (App tr cp) = App tr . foldr process cp
+processEvents (App tr cp s) es = App tr (foldr process cp es) s
     where process (CursorMoveEvent x y) _ = (x,y)
           process _ a = a
 
@@ -130,39 +148,31 @@ testTextOrd :: String
 testTextOrd = "A()BCDabcd0123  Hello\nOlé()"
 
 testText :: String
-testText = concat [ "[]"
+testText = concat [ "renderWith :: TextRenderer -> ShapeShaderProgram -> (Int, Int) -> IO ()\n"
+                  , "renderWith t s (w, h) = do\n"
+                  , "    let w' = fromIntegral w\n"
+                  , "        h' = fromIntegral h\n"
+                  , "        proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat\n"
                   , "\n"
-                  , "module FontRenderingIsSeriousBusiness where"
+                  , "    clearColor $= Color4 0.03 0.17 0.21 1.0\n"
+                  , "    clear [ColorBuffer, DepthBuffer]\n"
+                  , "    viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))\n"
                   , "\n"
+                  , "    -- Draw a blueish 100x100 square at 10 10\n"
+                  , "    let vs = quad 10 10 100 100\n"
+                  , "        cs = concat $ replicate 6 [0.07,0.21,0.26, 1]\n"
+                  , "    currentProgram $= (Just $ s^.S.program)\n"
+                  , "    s^.S.setProjection $ concat proj\n"
+                  , "    s^.S.setModelview $ concat $ identityN 4\n"
+                  , "    s^.setIsTextured $ False\n"
+                  , "    (i,j) <- bindAndBufferVertsColors vs cs\n"
+                  , "    drawArrays Triangles 0 6\n"
+                  , "    deleteObjectNames [i,j]\n"
                   , "\n"
-                  , "drawCharacter :: TextRenderer -> (GLfloat, GLfloat) -> Char -> IO (GLfloat, GLfloat)\n"
-                  , "drawCharacter r (x,y) char =\n"
-                  , "    let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap\n"
-                  , "    in\n"
-                  , "    case mChar of\n"
-                  , "        Nothing -> return (x,y)\n"
-                  , "        Just fc@(FontChar tex (w,h) ndx) -> do\n"
-                  , "            let p  = r^.shader.program\n"
-                  , "                Atlas _ ff pxS _ = r^.atlas\n"
-                  , "\n"
-                  , "            -- Get the metrics about the char.\n"
-                  , "            NormGMetrics (bXp,bYp) advp <- fmap normalizeGlyphMetrics $ glyphMetrics ff ndx\n"
-                  , "\n"
-                  , "            let sW = fromIntegral w\n"
-                  , "                sH = fromIntegral h\n"
-                  , "                x' = x + sW * realToFrac bXp\n"
-                  , "                y' = (y + fromIntegral pxS) - sH * realToFrac bYp\n"
-                  , "                a  = realToFrac advp * sW\n"
-                  , "                txy = translationMatrix3d x' y' 0\n"
-                  , "                sxy = scaleMatrix3d sW sH 1 :: Matrix GLfloat\n"
-                  , "                mv  = identityN 4 :: Matrix GLfloat\n"
-                  , "                mv' = mv `multiply` txy `multiply` sxy\n"
-                  , "\n"
-                  , "            texture Texture2D $= Enabled\n"
-                  , "            activeTexture $= TextureUnit 0\n"
-                  , "            textureBinding Texture2D $= Just tex\n"
-                  , "            r^.shader.setModelview $ concat mv'\n"
-                  , "            r^.quadUVRender\n"
-                  , "            return (x + a, y)\n"
+                  , "    -- Draw some text somewhere.\n"
+                  , "    currentProgram $= (Just $ t^.shader.T.program)\n"
+                  , "    t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0\n"
+                  , "    t^.shader.T.setProjection $ concat proj\n"
+                  , "    drawTextAt' t (0,0) testText"
                   ]
 
