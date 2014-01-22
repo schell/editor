@@ -37,6 +37,7 @@ makeLenses ''Atlas
 data BufferAccumulator = BufferAcc { _buffAccAtlas  :: Atlas
                                    , _buffAccGeom   :: BufferGeom
                                    , _buffAccPenPos :: PenPosition
+                                   , _buffAccSize   :: (GLfloat, GLfloat)
                                    }
 makeLenses ''BufferAccumulator
 

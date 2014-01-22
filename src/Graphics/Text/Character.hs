@@ -118,7 +118,7 @@ drawChar r pen char =
     let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
     in
     case mChar of
-        Nothing -> return pen 
+        Nothing -> return pen
         Just fc -> do
             let Atlas _ tex (tSw,tSh) pxS _ = r^.atlas
 
@@ -149,38 +149,53 @@ drawChar r pen char =
 
 -- | Produces and accumulates the geometry for rendering a string of characters
 -- into a buffer accumulator.
-geometryForString :: BufferAccumulator -> String -> BufferAccumulator 
+geometryForString :: BufferAccumulator -> String -> BufferAccumulator
 geometryForString b = foldl foldBuffer b
-    where foldBuffer b' '\n' = flip execState b' $ do 
-              pxS <- use $ buffAccAtlas.atlasPxSize
-              buffAccPenPos._2 += (fromIntegral pxS) 
+    where foldBuffer b' '\n' = flip execState b' $ do
+              pxS <- fmap fromIntegral $ use $ buffAccAtlas.atlasPxSize
+              -- Drop the pen pos y down a line and return that result.
+              y <- buffAccPenPos._2 <%= (+ pxS)
+              -- Reset the pen pos x.
               buffAccPenPos._1 .= b^.buffAccPenPos._1
+              -- Update the max height.
+              buffAccSize._2 .= y
           foldBuffer b' c    = accumulateBuffer b' c
 
 
-
 -- | Accumulates the geometry of a character into a buffer accumulator.
-accumulateBuffer :: Enum a => BufferAccumulator -> a -> BufferAccumulator 
-accumulateBuffer b@(BufferAcc atls geom pen) c 
+accumulateBuffer :: Enum a => BufferAccumulator -> a -> BufferAccumulator
+accumulateBuffer b@(BufferAcc atls _ pen (w,_)) c
     -- In the case of ' '.
-    | fromEnum c == 32 = case IM.lookup 0 $ atls^.atlasMap of
-        Nothing -> b & buffAccPenPos._1 +~ (fromIntegral $ atls^.atlasPxSize)
-        Just fc -> b & buffAccPenPos %~ (flip advancePenPosition fc) 
+    | fromEnum c == 32 =
+        let pen' = case IM.lookup 0 $ atls^.atlasMap of
+                       Nothing -> pen & _1 +~ (fromIntegral $ atls^.atlasPxSize)
+                       Just fc -> advancePenPosition pen fc
+        in flip execState b $ do
+            buffAccPenPos .= pen'
+            when (pen^._1 > w) $
+                buffAccSize._1 .= pen'^._1
 
     | otherwise = case IM.lookup (fromEnum c) $ atls^.atlasMap of
         -- If there is no character just move the pen forward.
-        Nothing -> (BufferAcc atls geom $ pen & _1 %~ (fromIntegral (atls^.atlasPxSize) +))
-        Just fc -> loadCharGeomIntoBuffer b fc
+        Just fc -> flip execState (loadCharGeomIntoBuffer b fc) $ do
+            x <- use $ buffAccPenPos._1
+            when (x > w) $
+                buffAccSize._1 .= x
+        Nothing -> flip execState b $ do
+            -- Update pen pos x and return that result.
+            x <- buffAccPenPos._1 <%= (fromIntegral (atls^.atlasPxSize) +)
+            when (x > w) $
+                buffAccSize._1 .= x
 
 
 -- | Loads character vertices and uv coords into a buffer accumulator.
-loadCharGeomIntoBuffer :: BufferAccumulator -> FontChar -> BufferAccumulator 
+loadCharGeomIntoBuffer :: BufferAccumulator -> FontChar -> BufferAccumulator
 loadCharGeomIntoBuffer b fc = loadCharUVs (loadCharVs b fc) fc
 
 
 -- | Loads a list of character vertices into a buffer accumulator.
 loadCharVs :: BufferAccumulator -> FontChar -> BufferAccumulator
-loadCharVs b fc = 
+loadCharVs b fc =
     let (vs, pp) = charVs fc (b^.buffAccPenPos) $ b^.buffAccAtlas.atlasPxSize
     in flip execState b $ do
         buffAccGeom %= (`mappend` (vs, []))
@@ -189,9 +204,9 @@ loadCharVs b fc =
 
 -- | Loads a list of character uv coords into a buffer accumulator.
 loadCharUVs :: BufferAccumulator -> FontChar -> BufferAccumulator
-loadCharUVs b fc = 
-    let uvs = charUVs fc (w',h') 
-        (w,h) = b^.buffAccAtlas.atlasTextureSize 
+loadCharUVs b fc =
+    let uvs = charUVs fc (w',h')
+        (w,h) = b^.buffAccAtlas.atlasTextureSize
         w' = fromIntegral w
         h' = fromIntegral h
     in b & buffAccGeom %~ (`mappend` ([], uvs))
@@ -220,13 +235,13 @@ charUVs (FontChar (w,h) (x,y) _) (tW,tH) =
 -- | Adjusts the pen position by the characters horizontal and vertical
 -- bearing.
 adjustedPenPosForChar :: PenPosition -> FontChar -> Int -> PenPosition
-adjustedPenPosForChar (x,y) (FontChar (w,h) _ (NormGMetrics (bXp, bYp) _)) pxS = 
+adjustedPenPosForChar (x,y) (FontChar (w,h) _ (NormGMetrics (bXp, bYp) _)) pxS =
     let sW = fromIntegral w
         sH = fromIntegral h
     in (x + sW * realToFrac bXp, (y + fromIntegral pxS) - sH * realToFrac bYp)
 
 
--- | Advances the pen position horizontally past the given character. 
+-- | Advances the pen position horizontally past the given character.
 advancePenPosition :: PenPosition -> FontChar -> PenPosition
 advancePenPosition (x,y) (FontChar (w,_) _ (NormGMetrics _ advp)) =
     let w'  = fromIntegral w

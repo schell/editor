@@ -43,8 +43,8 @@ drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
 
 drawTextAt' :: TextRenderer -> PenPosition -> String -> IO ()
 drawTextAt' r pen s = do
-    let (BufferAcc _ (vs,uvs) _) = geometryForString (BufferAcc (r^.atlas) mempty pen) s
-
+    let (BufferAcc _ (vs,uvs) _ (w,h)) = geometryForString (BufferAcc (r^.atlas) mempty pen (0,0)) s
+    putStrLn $ "Text is " ++ show w ++ "px x " ++ show h ++ "px"
     (i,j) <- bindAndBufferVertsUVs vs uvs
     texture Texture2D $= Enabled
     activeTexture $= TextureUnit 0

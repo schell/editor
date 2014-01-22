@@ -10,19 +10,10 @@ import System.Directory
 import Graphics.Rendering.OpenGL hiding (Bitmap, bitmap, Matrix)
 import Graphics.Text.Renderer
 import Graphics.Math
+import Editor.Types
 
 
-data InputEvent = CharEvent Char
-                | WindowSizeEvent Int Int
-                | KeyEvent Key Int KeyState ModifierKeys
-                | MouseButtonEvent MouseButton MouseButtonState ModifierKeys
-                | CursorMoveEvent Double Double
-                | CursorEnterEvent CursorState
-                | ScrollEvent Double Double
-                deriving (Show, Eq, Ord)
 
-
-type WindowVar = MVar ([InputEvent], Window)
 
 
 data App = App { _textRenderer :: TextRenderer
