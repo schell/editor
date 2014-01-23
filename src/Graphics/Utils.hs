@@ -13,8 +13,8 @@ printError = get errors >>= mapM_ (hPutStrLn stderr . ("GL: "++) . show)
 
 
 -- | Renders the IO () action into a framebuffer texture.
-renderToTexture :: (GLsizei, GLsizei) -> PixelInternalFormat -> IO () -> IO TextureObject
-renderToTexture (w,h) fmt ioF = do
+renderToTexture :: Size -> PixelInternalFormat -> IO () -> IO TextureObject
+renderToTexture (Size w h) fmt ioF = do
     fb <- genObjectName
     bindFramebuffer Framebuffer $= fb
 

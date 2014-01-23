@@ -7,7 +7,7 @@ import           Control.Lens
 import qualified Data.IntMap as IM
 
 
-type PenPosition = (GLfloat, GLfloat)
+type PenPosition = Position
 
 
 type BufferGeom = ([GLfloat], [GLfloat])
@@ -18,8 +18,8 @@ data NormalizedGlyphMetrics = NormGMetrics { _ngmBearing :: (Rational, Rational)
                                            } deriving (Show, Eq)
 
 
-data FontChar = FontChar { _fcTextureSize   :: (Int, Int)
-                         , _fcTextureOffset :: (Int, Int)
+data FontChar = FontChar { _fcTextureSize   :: Size
+                         , _fcTextureOffset :: Position
                          , _fcNormMetrics   :: NormalizedGlyphMetrics
                          } deriving (Show, Eq)
 makeLenses ''FontChar
@@ -27,8 +27,8 @@ makeLenses ''FontChar
 
 data Atlas = Atlas { _atlasFontFilePath  :: FilePath
                    , _atlasTextureObject :: TextureObject
-                   , _atlasTextureSize   :: (Int, Int)
-                   , _atlasPxSize        :: Int
+                   , _atlasTextureSize   :: Size 
+                   , _atlasPxSize        :: GLsizei
                    , _atlasMap           :: IM.IntMap FontChar
                    }
 makeLenses ''Atlas
@@ -36,8 +36,8 @@ makeLenses ''Atlas
 
 data BufferAccumulator = BufferAcc { _buffAccAtlas  :: Atlas
                                    , _buffAccGeom   :: BufferGeom
-                                   , _buffAccPenPos :: PenPosition
-                                   , _buffAccSize   :: (GLfloat, GLfloat)
+                                   , _buffAccPos    :: Position
+                                   , _buffAccSize   :: Size
                                    }
 makeLenses ''BufferAccumulator
 

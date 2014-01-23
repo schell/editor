@@ -21,7 +21,7 @@ import           Graphics.Rendering.Text.Types
 
 -- | Returns an opengl texture object and a FontChar containing metrics for
 -- the given enum. The enum should represent a character code.
-texturizeGlyphOfEnum :: Enum a => FilePath -> Int -> a -> IO (TextureObject, FontChar)
+texturizeGlyphOfEnum :: Enum a => FilePath -> GLsizei -> a -> IO (TextureObject, FontChar)
 texturizeGlyphOfEnum file px enm = do
     ft <- freeType
     ff <- fontFace ft file
@@ -74,8 +74,8 @@ texturizeGlyphOfEnum file px enm = do
     -- Clean up.
     runFreeType $ ft_Done_FreeType ft
 
-    return (tex, FontChar { _fcTextureSize = (w, h)
-                          , _fcTextureOffset = (0, 0) -- No offset yet (comes later in the atlas).
+    return (tex, FontChar { _fcTextureSize = Size w h
+                          , _fcTextureOffset = Position 0 0 -- No offset yet (comes later in the atlas).
                           , _fcNormMetrics = nGlyphMetrics
                           })
 

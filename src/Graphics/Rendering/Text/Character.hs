@@ -39,11 +39,11 @@ loadCharacter r ' ' = return r
 loadCharacter r char = do
     let fp       = r^.atlas.atlasFontFilePath
         px       = r^.atlas.atlasPxSize
-        (aW, aH) = r^.atlas.atlasTextureSize
+        Size aW aH = r^.atlas.atlasTextureSize
         aTex     = r^.atlas.atlasTextureObject
 
     -- Render the glyph into a seperate texture.
-    (charTex, (FontChar (gW, gH) _ gMtrx)) <- texturizeGlyphOfEnum fp px char
+    (charTex, (FontChar (Size gW gH) _ gMtrx)) <- texturizeGlyphOfEnum fp px char
 
     let w  = aW + gW
         h  = max aH gH
@@ -56,7 +56,7 @@ loadCharacter r char = do
 
 
     -- Flip the charTex to be right side up.
-    charTex' <- renderToTexture (gW', gH') R8 $ do
+    charTex' <- renderToTexture (Size gW' gH') R8 $ do
         let pj = orthoMatrix 0 gW'' gH'' 0 0 1 :: Matrix GLfloat
             mv = identityN 4 `multiply` scaleMatrix3d gW'' gH'' 1 :: Matrix GLfloat
             vs = texQuad 0 0 1 1
@@ -81,7 +81,7 @@ loadCharacter r char = do
     -- Then get rid of the old char texture.
     deleteObjectName charTex
 
-    tex <- renderToTexture (w',h') R8 $ do
+    tex <- renderToTexture (Size w' h') R8 $ do
         -- Now render business as usual.
         let pj  = orthoMatrix 0 (fromIntegral w) (fromIntegral h) 0 0 1 :: Matrix GLfloat
             aW' = fromIntegral aW
@@ -93,27 +93,27 @@ loadCharacter r char = do
         currentProgram $= (Just $ r^.shader.program)
         r^.shader.setProjection $ concat pj
         -- We have to render the atlas upside down.
-        renderTex r aTex (0,0) (aW', aH')
-        renderTex r charTex' (aW', 0) (gW'', gH'')
+        renderTex r aTex (Position 0 0) (aW', aH')
+        renderTex r charTex' (Position (fromIntegral aW) 0) (gW'', gH'')
 
     deleteObjectName aTex
     deleteObjectName charTex'
 
     -- Update our atlas.
     return $ flip execState r $ do
-        atlas.atlasMap %= IM.insert (fromEnum char) (FontChar (gW,gH) (aW,0) gMtrx)
+        atlas.atlasMap %= IM.insert (fromEnum char) (FontChar (Size gW gH) (Position aW 0) gMtrx)
         atlas.atlasTextureObject .= tex
-        atlas.atlasTextureSize .= (w,h)
+        atlas.atlasTextureSize .= Size w h
 
 
 -- | Draws one character at a given pen position using the given renderer.
 -- Returns the next pen position.
 drawChar :: TextRenderer -> PenPosition -> Char -> IO PenPosition
-drawChar r (x,y) ' ' =
+drawChar r (Position x y) ' ' =
     case IM.lookup 0 $ r^.atlas.atlasMap of
         -- Worst case scenario we advance by the pixel size.
-        Nothing -> return (x + fromIntegral (r^.atlas.atlasPxSize), y)
-        Just c -> return $ advancePenPosition (x,y) c
+        Nothing -> return (Position (x + r^.atlas.atlasPxSize) y)
+        Just c -> return $ advancePenPosition (Position x y) c
 
 drawChar r pen char =
     let mChar = IM.lookup (fromEnum char) $ r^.atlas.atlasMap
@@ -121,7 +121,7 @@ drawChar r pen char =
     case mChar of
         Nothing -> return pen
         Just fc -> do
-            let Atlas _ tex (tSw,tSh) pxS _ = r^.atlas
+            let Atlas _ tex (Size tSw tSh) pxS _ = r^.atlas
 
             -- Find the scaled (normalized) glyph metrics and use those to
             -- typeset our character.
@@ -154,39 +154,44 @@ geometryForString :: BufferAccumulator -> String -> BufferAccumulator
 geometryForString b = foldl foldBuffer b
     where foldBuffer b' '\n' = flip execState b' $ do
               pxS <- fmap fromIntegral $ use $ buffAccAtlas.atlasPxSize
-              -- Drop the pen pos y down a line and return that result.
-              y <- buffAccPenPos._2 <%= (+ pxS)
-              -- Reset the pen pos x.
-              buffAccPenPos._1 .= b^.buffAccPenPos._1
+              Position _ y <- use buffAccPos
+              -- Reset the pen pos x, also drop the pen pos y down a line
+              -- and return that result.
+              Position _ y' <- buffAccPos <.= Position 0 (y + pxS)
               -- Update the max height.
-              buffAccSize._2 .= y
+              buffAccSize %= (\(Size w _) -> Size w y')
           foldBuffer b' c    = accumulateBuffer b' c
 
 
 -- | Accumulates the geometry of a character into a buffer accumulator.
 accumulateBuffer :: Enum a => BufferAccumulator -> a -> BufferAccumulator
-accumulateBuffer b@(BufferAcc atls _ pen (w,_)) c
+accumulateBuffer b@(BufferAcc atls _ (Position penX penY) (Size w _)) c
     -- In the case of ' '.
     | fromEnum c == 32 =
-        let pen' = case IM.lookup 0 $ atls^.atlasMap of
-                       Nothing -> pen & _1 +~ (fromIntegral $ atls^.atlasPxSize)
-                       Just fc -> advancePenPosition pen fc
+        let (Position penX' penY') =
+                case IM.lookup 0 $ atls^.atlasMap of
+                    -- Update the x pen pos by the px size.
+                    Nothing -> (Position (penX + atls^.atlasPxSize) penY)
+                    Just fc -> advancePenPosition (Position penX penY) fc
         in flip execState b $ do
-            buffAccPenPos .= pen'
-            when (pen^._1 > w) $
-                buffAccSize._1 .= pen'^._1
+            buffAccPos .= Position penX' penY'
+            when (penX' > w) $
+                -- Update the width.
+                buffAccSize %= \(Size _ h) -> Size penX' h
 
     | otherwise = case IM.lookup (fromEnum c) $ atls^.atlasMap of
         -- If there is no character just move the pen forward.
         Just fc -> flip execState (loadCharGeomIntoBuffer b fc) $ do
-            x <- use $ buffAccPenPos._1
+            Position x _ <- use $ buffAccPos
             when (x > w) $
-                buffAccSize._1 .= x
+                -- Update the width to the x pos.
+                buffAccSize %= \(Size _ h) -> Size x h
         Nothing -> flip execState b $ do
             -- Update pen pos x and return that result.
-            x <- buffAccPenPos._1 <%= (fromIntegral (atls^.atlasPxSize) +)
-            when (x > w) $
-                buffAccSize._1 .= x
+            Position x' _ <- buffAccPos <%= \(Position x y) -> (Position (x + atls^.atlasPxSize) y)
+            when (x' > w) $
+                -- Update the width to the new x pos.
+                buffAccSize %= \(Size _ h) -> Size x' h
 
 
 -- | Loads character vertices and uv coords into a buffer accumulator.
@@ -197,17 +202,17 @@ loadCharGeomIntoBuffer b fc = loadCharUVs (loadCharVs b fc) fc
 -- | Loads a list of character vertices into a buffer accumulator.
 loadCharVs :: BufferAccumulator -> FontChar -> BufferAccumulator
 loadCharVs b fc =
-    let (vs, pp) = charVs fc (b^.buffAccPenPos) $ b^.buffAccAtlas.atlasPxSize
+    let (vs, pp) = charVs fc (b^.buffAccPos) $ b^.buffAccAtlas.atlasPxSize
     in flip execState b $ do
         buffAccGeom %= (`mappend` (vs, []))
-        buffAccPenPos .= pp
+        buffAccPos .= pp
 
 
 -- | Loads a list of character uv coords into a buffer accumulator.
 loadCharUVs :: BufferAccumulator -> FontChar -> BufferAccumulator
 loadCharUVs b fc =
     let uvs = charUVs fc (w',h')
-        (w,h) = b^.buffAccAtlas.atlasTextureSize
+        Size w h = b^.buffAccAtlas.atlasTextureSize
         w' = fromIntegral w
         h' = fromIntegral h
     in b & buffAccGeom %~ (`mappend` ([], uvs))
@@ -216,16 +221,20 @@ loadCharUVs b fc =
 -- | Returns the vertex coords of the given character at a pen position
 -- and the next pen position.
 -- The vertices are in pixel coordinates assuming (0,0) to be upper left.
-charVs :: FontChar -> PenPosition -> Int -> ([GLfloat], PenPosition)
-charVs fc@(FontChar (w,h) _ _) (x,y) pxS =
-    let (x', y') = adjustedPenPosForChar (x,y) fc pxS
-    in (quad x' y' (fromIntegral w) (fromIntegral h), advancePenPosition (x,y) fc)
+charVs :: FontChar -> PenPosition -> GLsizei -> ([GLfloat], PenPosition)
+charVs fc@(FontChar (Size w h) _ _) pen pxS =
+    let Position x' y' = adjustedPenPosForChar pen fc pxS
+        x'' = fromIntegral x'
+        y'' = fromIntegral y'
+        w'  = fromIntegral w
+        h'  = fromIntegral h
+    in (quad x'' y'' w' h', advancePenPosition pen fc)
 
 
 -- | Returns the uv coords of the given character with regard to a texture
 -- size. The texture atlas has the glyphs flipped in Y.
 charUVs :: FontChar -> (GLfloat, GLfloat) -> [GLfloat]
-charUVs (FontChar (w,h) (x,y) _) (tW,tH) =
+charUVs (FontChar (Size w h) (Position x y) _) (tW,tH) =
     let x' = fromIntegral x/tW
         y' = fromIntegral y/tH
         w' = fromIntegral w/tW
@@ -235,27 +244,31 @@ charUVs (FontChar (w,h) (x,y) _) (tW,tH) =
 
 -- | Adjusts the pen position by the characters horizontal and vertical
 -- bearing.
-adjustedPenPosForChar :: PenPosition -> FontChar -> Int -> PenPosition
-adjustedPenPosForChar (x,y) (FontChar (w,h) _ (NormGMetrics (bXp, bYp) _)) pxS =
-    let sW = fromIntegral w
-        sH = fromIntegral h
-    in (x + sW * realToFrac bXp, (y + fromIntegral pxS) - sH * realToFrac bYp)
+adjustedPenPosForChar :: PenPosition -> FontChar -> GLsizei -> PenPosition
+adjustedPenPosForChar (Position x y) (FontChar (Size w h) _ (NormGMetrics (bXp, bYp) _)) pxS =
+    let prcntY = realToFrac bYp :: Double
+        prcntX = realToFrac bXp :: Double
+        incX = (fromIntegral w) * prcntX
+        incY = (fromIntegral pxS) - (fromIntegral h) * prcntY
+    in Position (x + floor incX) (y + floor incY)
 
 
 -- | Advances the pen position horizontally past the given character.
 advancePenPosition :: PenPosition -> FontChar -> PenPosition
-advancePenPosition (x,y) (FontChar (w,_) _ (NormGMetrics _ advp)) =
+advancePenPosition (Position x y) (FontChar (Size w _) _ (NormGMetrics _ advp)) =
     let w'  = fromIntegral w
-        adv = realToFrac advp * w'
-    in (x + adv, y)
+        adv = advp * w'
+    in Position (x + floor adv) y
 
 
 -- | Renders a texture object at a pen position using the program in the
 -- given text renderer.
 renderTex :: TextRenderer -> TextureObject -> PenPosition -> (GLfloat, GLfloat) -> IO ()
-renderTex r t (x,y) (w,h) = do
+renderTex r t (Position x y) (w,h) = do
     let scl  = scaleMatrix3d w h 1 :: Matrix GLfloat
-        tns = translationMatrix3d x y 0 :: Matrix GLfloat
+        x'  = fromIntegral x
+        y'  = fromIntegral y
+        tns = translationMatrix3d x' y' 0 :: Matrix GLfloat
         mv  = identityN 4 `multiply` tns `multiply` scl
         vts = texQuad 0 0 1 1
         uvs = texQuad 0 0 1 1

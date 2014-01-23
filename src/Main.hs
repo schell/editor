@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Main where
 
 import Graphics.UI.GLFW as GLFW
@@ -14,13 +15,16 @@ import Graphics.Rendering.Shader.Shape as S
 import Graphics.Rendering.Shader.Text as T
 import Graphics.Math
 import Graphics.Utils
+import Graphics.Texture.Load
 import Editor.Types
 
 
 data App = App { _textRenderer :: TextRenderer
                , _cursorPos :: (Double,Double)
                , _shapeProgram :: ShapeShaderProgram
+               , _zed :: TextureObject
                }
+makeLenses ''App
 
 
 main :: IO ()
@@ -37,11 +41,11 @@ main = do
     unless exists $ fail $ font ++ " does not exist."
 
     let load tr = loadCharMap tr testText
-    textRenderer <- makeTextRenderer font 16 >>= load
-
+    texRenderer <- makeTextRenderer font 16 >>= load
     shapeShader <- makeShapeShaderProgram
+    Just zTex <- fmap (++ "/assets/zed.png") getCurrentDirectory >>= flip initTexture 0
 
-    iterateM_ (loop wvar) $ App textRenderer (0,0) shapeShader
+    iterateM_ (loop wvar) $ App texRenderer (0,0) shapeShader zTex
 
 
 -- | Creates a new window. Fails and crashes if no window can be created.
@@ -96,11 +100,11 @@ loop wvar app = do
     (w, h) <- getWindowSize win
 
     -- Process the input.
-    let a@(App t _ s) = processEvents app es
+    let a@(App t _ s z) = processEvents app es
 
     makeContextCurrent $ Just win
     -- Render the app in the window.
-    renderWith t s (w, h)
+    renderWith t s z (w, h)
     swapBuffers win
 
     -- Quit if need be.
@@ -110,8 +114,8 @@ loop wvar app = do
     return a
 
 
-renderWith :: TextRenderer -> ShapeShaderProgram -> (Int, Int) -> IO ()
-renderWith t s (w, h) = do
+renderWith :: TextRenderer -> ShapeShaderProgram -> TextureObject -> (Int, Int) -> IO ()
+renderWith t s z (w, h) = do
     let w' = fromIntegral w
         h' = fromIntegral h
         proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat
@@ -123,6 +127,8 @@ renderWith t s (w, h) = do
     -- Draw a blueish 100x100 square at 10 10
     let vs = quad 10 10 100 100
         cs = concat $ replicate 6 [0.07,0.21,0.26, 1]
+        vs' = quad (w' - 256) (h' - 256) 256 256
+        uvs = quad 0 0 1 1 :: [GLfloat]
     currentProgram $= (Just $ s^.S.program)
     s^.S.setProjection $ concat proj
     s^.S.setModelview $ concat $ identityN 4
@@ -131,17 +137,28 @@ renderWith t s (w, h) = do
     drawArrays Triangles 0 6
     deleteObjectNames [i,j]
 
+    -- Draw the zed logo.
+    s^.setIsTextured $ True
+    activeTexture $= TextureUnit 0
+    texture Texture2D $= Enabled
+    textureBinding Texture2D $= Just z
+    s^.S.setSampler $ Index1 0
+    (k,l) <- S.bindAndBufferVertsUVs vs' uvs
+    drawArrays Triangles 0 6
+    deleteObjectNames [k,l]
+
     -- Draw some text somewhere.
     currentProgram $= (Just $ t^.shader.T.program)
     t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
     t^.shader.T.setProjection $ concat proj
-    drawTextAt' t (0,0) testText
+    drawTextAt t (Position 0 0) testText
+
 
 
 processEvents :: App -> [InputEvent] -> App
-processEvents (App tr cp s) es = App tr (foldr process cp es) s
+processEvents a es = a & cursorPos %~ (\cp -> foldr process cp es)
     where process (CursorMoveEvent x y) _ = (x,y)
-          process _ a = a
+          process _ cp = cp
 
 
 testTextOrd :: String

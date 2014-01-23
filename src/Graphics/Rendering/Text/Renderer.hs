@@ -17,7 +17,7 @@ import           Control.Lens
 import           Data.Monoid
 import qualified Data.IntMap as IM
 
-makeAtlas :: FilePath -> Int -> IO Atlas
+makeAtlas :: FilePath -> GLsizei -> IO Atlas
 makeAtlas fp px = do
     -- Get the missing glyph as a texture and FontChar.
     (tex, fChar) <- texturizeGlyphOfEnum fp px '\NUL'
@@ -32,15 +32,14 @@ makeAtlas fp px = do
 
 
 drawTextAt :: TextRenderer -> PenPosition -> String -> IO ()
-drawTextAt r (x,y) = foldM_ foldCharacter (x,y)
-    where foldCharacter (_,y') '\n' = return (x, y' + fromIntegral (r^.atlas.atlasPxSize))
+drawTextAt r (Position x y) = foldM_ foldCharacter (Position x y)
+    where foldCharacter (Position _ y') '\n' = return (Position x (y' + r^.atlas.atlasPxSize))
           foldCharacter p c          = drawChar r p c
 
 
-drawTextAt' :: TextRenderer -> PenPosition -> String -> IO ()
+drawTextAt' :: TextRenderer -> PenPosition -> String -> IO Size
 drawTextAt' r pen s = do
-    let (BufferAcc _ (vs,uvs) _ (w,h)) = geometryForString (BufferAcc (r^.atlas) mempty pen (0,0)) s
-    putStrLn $ "Text is " ++ show w ++ "px x " ++ show h ++ "px"
+    let (BufferAcc _ (vs,uvs) _ size) = geometryForString (BufferAcc (r^.atlas) mempty pen (Size 0 0)) s
     (i,j) <- bindAndBufferVertsUVs vs uvs
     texture Texture2D $= Enabled
     activeTexture $= TextureUnit 0
@@ -50,9 +49,10 @@ drawTextAt' r pen s = do
     drawArrays Triangles 0 $ fromIntegral $ 6 * length s
     bindBuffer ArrayBuffer $= Nothing
     deleteObjectNames [i,j]
+    return size
 
 
-makeTextRenderer :: FilePath -> Int -> IO TextRenderer
+makeTextRenderer :: FilePath -> GLsizei -> IO TextRenderer
 makeTextRenderer font px = do
     blend $= Enabled
     blendFunc $= (SrcAlpha, OneMinusSrcAlpha)
