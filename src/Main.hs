@@ -2,7 +2,9 @@
 module Main where
 
 import Graphics.UI.GLFW as GLFW
+import Data.Maybe
 import Control.Concurrent.MVar
+import Control.Concurrent
 import Control.Monad
 import Control.Monad.Loops
 import Control.Lens
@@ -13,6 +15,7 @@ import Graphics.Rendering.Text.Renderer
 import Graphics.Rendering.Text.Types
 import Graphics.Rendering.Shader.Shape as S
 import Graphics.Rendering.Shader.Text as T
+import Graphics.Cacheing.Text
 import Graphics.Math
 import Graphics.Utils
 import Graphics.Texture.Load
@@ -23,6 +26,7 @@ data App = App { _textRenderer :: TextRenderer
                , _cursorPos :: (Double,Double)
                , _shapeProgram :: ShapeShaderProgram
                , _zed :: TextureObject
+               , _cache :: Maybe RenderCache
                }
 makeLenses ''App
 
@@ -45,7 +49,7 @@ main = do
     shapeShader <- makeShapeShaderProgram
     Just zTex <- fmap (++ "/assets/zed.png") getCurrentDirectory >>= flip initTexture 0
 
-    iterateM_ (loop wvar) $ App texRenderer (0,0) shapeShader zTex
+    iterateM_ (loop wvar) $ App texRenderer (0,0) shapeShader zTex Nothing
 
 
 -- | Creates a new window. Fails and crashes if no window can be created.
@@ -100,58 +104,94 @@ loop wvar app = do
     (w, h) <- getWindowSize win
 
     -- Process the input.
-    let a@(App t _ s z) = processEvents app es
+    let a = processEvents app es
 
     makeContextCurrent $ Just win
     -- Render the app in the window.
-    renderWith t s z (w, h)
-    swapBuffers win
+    cash <- if (null es && (isJust $ _cache a))
+              then do
+                  threadDelay 10000
+                  return $ fromJust $ _cache a
+              else do cash <- renderWith a (w, h)
+                      swapBuffers win
+                      return cash
 
     -- Quit if need be.
     shouldClose <- windowShouldClose win
     makeContextCurrent Nothing
     when shouldClose exitSuccess
-    return a
+    return a{ _cache = Just cash}
 
 
-renderWith :: TextRenderer -> ShapeShaderProgram -> TextureObject -> (Int, Int) -> IO ()
-renderWith t s z (w, h) = do
+renderWith :: App -> (Int, Int) -> IO RenderCache
+renderWith (App t _ s z c) (w, h) = do
     let w' = fromIntegral w
         h' = fromIntegral h
         proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat
+
+    cash <- case c of
+        Just cash -> return cash
+        Nothing   -> do
+            let size = Size (fromIntegral w) (fromIntegral h)
+            tex <- renderToTexture size RGB8 $ do
+                clearColor $= Color4 0.03 0.17 0.21 1.0
+                clear [ColorBuffer, DepthBuffer]
+                viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
+
+                -- Draw a blueish 100x100 square at 10 10
+                let vs = quad 10 10 100 100
+                    cs = concat $ replicate 6 [0.07,0.21,0.26, 1]
+                    vs' = quad (w' - 256) (h' - 256) 256 256
+                    uvs = quad 0 0 1 1 :: [GLfloat]
+                currentProgram $= (Just $ s^.S.program)
+                s^.S.setProjection $ concat proj
+                s^.S.setModelview $ concat $ identityN 4
+                s^.setIsTextured $ False
+                (i,j) <- bindAndBufferVertsColors vs cs
+                drawArrays Triangles 0 6
+                deleteObjectNames [i,j]
+
+                -- Draw the zed logo.
+                s^.setIsTextured $ True
+                activeTexture $= TextureUnit 0
+                texture Texture2D $= Enabled
+                textureBinding Texture2D $= Just z
+                s^.S.setSampler $ Index1 0
+                (k,l) <- S.bindAndBufferVertsUVs vs' uvs
+                drawArrays Triangles 0 6
+                deleteObjectNames [k,l]
+
+                -- Draw some text somewhere.
+                currentProgram $= (Just $ t^.shader.T.program)
+                t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
+                t^.shader.T.setProjection $ concat proj
+                drawTextAt t (Position 0 0) testText
+            return RenderCache { _cacheTexture = tex
+                               , _cacheSize = size
+                               , _cachePos = Position 0 0
+                               }
 
     clearColor $= Color4 0.03 0.17 0.21 1.0
     clear [ColorBuffer, DepthBuffer]
     viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))
 
-    -- Draw a blueish 100x100 square at 10 10
-    let vs = quad 10 10 100 100
-        cs = concat $ replicate 6 [0.07,0.21,0.26, 1]
-        vs' = quad (w' - 256) (h' - 256) 256 256
-        uvs = quad 0 0 1 1 :: [GLfloat]
+    let Size csw csh = _cacheSize cash
+        vs  = quad 0 0 (fromIntegral csw) (fromIntegral csh)
+        uvs = texQuad 0 0 1 1
+
     currentProgram $= (Just $ s^.S.program)
     s^.S.setProjection $ concat proj
     s^.S.setModelview $ concat $ identityN 4
-    s^.setIsTextured $ False
-    (i,j) <- bindAndBufferVertsColors vs cs
-    drawArrays Triangles 0 6
-    deleteObjectNames [i,j]
-
-    -- Draw the zed logo.
     s^.setIsTextured $ True
     activeTexture $= TextureUnit 0
-    texture Texture2D $= Enabled
-    textureBinding Texture2D $= Just z
+    textureBinding Texture2D $= Just (_cacheTexture cash)
     s^.S.setSampler $ Index1 0
-    (k,l) <- S.bindAndBufferVertsUVs vs' uvs
+    (a,b) <- S.bindAndBufferVertsUVs vs uvs
     drawArrays Triangles 0 6
-    deleteObjectNames [k,l]
+    deleteObjectNames [a,b]
 
-    -- Draw some text somewhere.
-    currentProgram $= (Just $ t^.shader.T.program)
-    t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0
-    t^.shader.T.setProjection $ concat proj
-    drawTextAt t (Position 0 0) testText
+    return cash
+
 
 
 
@@ -165,31 +205,5 @@ testTextOrd :: String
 testTextOrd = "A()BCDabcd0123  Hello\nOlé()"
 
 testText :: String
-testText = concat [ "renderWith :: TextRenderer -> ShapeShaderProgram -> (Int, Int) -> IO ()\n"
-                  , "renderWith t s (w, h) = do\n"
-                  , "    let w' = fromIntegral w\n"
-                  , "        h' = fromIntegral h\n"
-                  , "        proj = orthoMatrix 0 w' 0 h' 0 1 :: Matrix GLfloat\n"
-                  , "\n"
-                  , "    clearColor $= Color4 0.03 0.17 0.21 1.0\n"
-                  , "    clear [ColorBuffer, DepthBuffer]\n"
-                  , "    viewport $= (Position 0 0, Size (fromIntegral w) (fromIntegral h))\n"
-                  , "\n"
-                  , "    -- Draw a blueish 100x100 square at 10 10\n"
-                  , "    let vs = quad 10 10 100 100\n"
-                  , "        cs = concat $ replicate 6 [0.07,0.21,0.26, 1]\n"
-                  , "    currentProgram $= (Just $ s^.S.program)\n"
-                  , "    s^.S.setProjection $ concat proj\n"
-                  , "    s^.S.setModelview $ concat $ identityN 4\n"
-                  , "    s^.setIsTextured $ False\n"
-                  , "    (i,j) <- bindAndBufferVertsColors vs cs\n"
-                  , "    drawArrays Triangles 0 6\n"
-                  , "    deleteObjectNames [i,j]\n"
-                  , "\n"
-                  , "    -- Draw some text somewhere.\n"
-                  , "    currentProgram $= (Just $ t^.shader.T.program)\n"
-                  , "    t^.shader.setTextColor $ Color4 0.52 0.56 0.50 1.0\n"
-                  , "    t^.shader.T.setProjection $ concat proj\n"
-                  , "    drawTextAt' t (0,0) testText"
-                  ]
+testText = concat $ replicate 20 "Font rendering is...\n  ...serious business.\n"
 
